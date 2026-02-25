@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sir Knight's Alphabet Adventure</title>
+<style>
+  body { margin:0; background:#1a0a2e; display:flex; justify-content:center; align-items:center; min-height:100vh; font-family:Georgia,serif; }
+  #wrap { position:relative; }
+  canvas { display:block; border:8px solid #8B6914; border-radius:4px; box-shadow:0 0 40px #8B691480, 0 0 0 2px #c9a227; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="900" height="550"></canvas></div>
+<script>
+// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+const W = 900, H = 550;
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const LETTER_COLORS = [
+  '#e63946','#f4a261','#2a9d8f','#e9c46a','#a8dadc',
+  '#457b9d','#f77f00','#6d4c41','#7b2d8b','#00b4d8',
+  '#e76f51','#52b788','#ff006e','#fb5607','#8338ec',
+  '#3a86ff','#06d6a0','#ef233c','#4361ee','#f72585',
+  '#7209b7','#3f37c9','#4895ef','#4cc9f0','#b5179e',
+  '#560bad'
+];
+const HAT_COLORS = [
+  '#6a0dad','#c0392b','#1abc9c','#e67e22','#2980b9',
+  '#8e44ad','#d35400','#16a085','#c0392b','#2c3e50',
+  '#7f8c8d','#f39c12','#1a5276','#6c3483','#117a65',
+  '#784212','#1f618d','#922b21','#0e6655','#7d6608',
+  '#515a5a','#2e4057','#8e44ad','#148f77','#6e2f19',
+  '#1b2631'
+];
+const NUMBERS = ['0','1','2','3','4','5','6','7','8','9'];
+const NUMBER_COLORS = [
+  '#f72585','#7209b7','#3a0ca3','#4361ee','#4cc9f0',
+  '#06d6a0','#118ab2','#ffd166','#ef233c','#8338ec'
+];
+const NUMBER_HAT_COLORS = [
+  '#c0392b','#1abc9c','#e67e22','#2980b9','#8e44ad',
+  '#d35400','#16a085','#c0392b','#2c3e50','#7f8c8d'
+];
+const WORDS = ['CAT','DOG','PIG','BEE','SUN','HAT','FOX','CUP','HEN','COW','BOX','BED'];
+const WORD_COLORS = [
+  '#e63946','#f4a261','#ff9fb2','#ffd700','#ffb703',
+  '#8b5cf6','#ff6b35','#06d6a0','#fb8500','#2ec4b6','#8b4513','#6c63ff'
+];
+
+// ─── HAND-DRAWN HELPERS ───────────────────────────────────────────────────────
+// Deterministic jitter (no flicker) — position-seeded sin noise
+const JITTER = Array.from({length:512},(_,i)=>Math.sin(i*2.3999+i*i*0.00017)*0.5+Math.sin(i*1.6180)*0.5);
+function jit(seed, amp) { return JITTER[(Math.abs(Math.round(seed))&511)] * amp; }
+
+// Wobbly rectangle — hand-inked feel
+function roughRect(cx, x, y, w, h, wobble) {
+  wobble = wobble||3;
+  const s = Math.round(x*3+y*7);
+  cx.moveTo(x+jit(s,wobble),    y+jit(s+1,wobble));
+  cx.lineTo(x+w+jit(s+2,wobble),y+jit(s+3,wobble));
+  cx.lineTo(x+w+jit(s+4,wobble),y+h+jit(s+5,wobble));
+  cx.lineTo(x+jit(s+6,wobble),  y+h+jit(s+7,wobble));
+  cx.closePath();
+}
+
+// Wobbly circle — hand-inked feel
+function roughCircle(cx, ox, oy, r, wobble, steps) {
+  wobble = wobble||r*0.07; steps = steps||16;
+  const s = Math.round(ox*5+oy*11);
+  for(let i=0;i<=steps;i++){
+    const a=(i/steps)*Math.PI*2;
+    const nr=r+jit(s+i,wobble);
+    const px=ox+Math.cos(a)*nr, py=oy+Math.sin(a)*nr;
+    i===0?cx.moveTo(px,py):cx.lineTo(px,py);
+  }
+  cx.closePath();
+}
+
+// Hatch marks for rustic shading (cross-hatch lines in a box)
+function hatch(cx, x, y, w, h, gap, angle, col, alpha) {
+  cx.save();
+  cx.globalAlpha = alpha||0.12;
+  cx.strokeStyle = col||'#3d1a00';
+  cx.lineWidth = 0.8;
+  cx.beginPath();
+  const len = Math.max(w,h)*2;
+  for(let d=-len;d<len;d+=gap){
+    cx.moveTo(x+d*Math.cos(angle)-len*Math.sin(angle), y+d*Math.sin(angle)+len*Math.cos(angle));
+    cx.lineTo(x+d*Math.cos(angle)+len*Math.sin(angle), y+d*Math.sin(angle)-len*Math.cos(angle));
+  }
+  cx.save(); cx.rect(x,y,w,h); cx.clip(); cx.stroke(); cx.restore();
+  cx.restore();
+}
+
+// Parchment / paper grain overlay — drawn once, reused
+function drawPaperOverlay(cx) {
+  cx.save();
+  // Very faint brown fibres
+  cx.globalAlpha = 0.04;
+  cx.strokeStyle = '#6b3a1f';
+  cx.lineWidth = 1;
+  cx.beginPath();
+  for(let i=0;i<80;i++){
+    const x1=JITTER[i]*W, y1=JITTER[(i+100)&511]*H;
+    cx.moveTo(x1,y1);
+    cx.lineTo(x1+JITTER[(i+200)&511]*40-20, y1+JITTER[(i+300)&511]*3);
+  }
+  cx.stroke();
+  // Edge vignette for parchment warmth
+  cx.globalAlpha = 1;
+  const vig=cx.createRadialGradient(W/2,H/2,H*0.28,W/2,H/2,H*0.85);
+  vig.addColorStop(0,'transparent');
+  vig.addColorStop(1,'rgba(60,20,5,0.18)');
+  cx.fillStyle=vig; cx.fillRect(0,0,W,H);
+  cx.restore();
+}
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let state = 'TITLE'; // TITLE | PLAYING | BATTLE | LETTER_DEFEATED | VICTORY
+let currentIndex = 0;
+let bgOffset = 0;
+let frameCount = 0;
+
+// Knight
+const knight = { x:120, y:370, vy:0, walking:false, attacking:false, blocking:false,
+                  attackTimer:0, blockTimer:0, celebrateTimer:0, bobOffset:0 };
+
+// Enemy
+const enemy  = { x:900, y:360, active:false, defeated:false,
+                  defeatTimer:0, defeatAngle:0, defeatScale:1,
+                  hits:0, hitFlash:0 };
+
+// Particles
+let particles = [];
+
+// Victory stars
+let stars = [];
+
+// Blink timer for UI
+let blinkTimer = 0;
+
+// Phase tracking
+let gamePhase = 'LETTERS'; // 'LETTERS' | 'WORDS' | 'NUMBERS'
+let numberIndex = 0;
+let wordIndex = 0;
+
+// ─── AUDIO ───────────────────────────────────────────────────────────────────
+// (filled in step 2)
+let audioCtx = null;
+let musicGain = null;
+let musicScheduled = false;
+let musicStartTime = 0;
+const BPM = 130;
+const BEAT = 60 / BPM;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  musicGain = audioCtx.createGain();
+  musicGain.gain.value = 0.18;
+  const comp = audioCtx.createDynamicsCompressor();
+  musicGain.connect(comp);
+  comp.connect(audioCtx.destination);
+  startMusic();
+}
+
+function startMusic() {
+  // Baroque D-minor harpsichord arpeggio (running 16th notes)
+  // Chord progression: Dm - Am - Bb - F - C - Gm - A7 - Dm
+  const S = 60 / 108 / 4; // 16th-note duration at ~108 BPM
+  // Each group of 8 notes = one half-measure arpeggio up + down
+  const pat = [
+    // Dm   (D4 F4 A4 D5 A4 F4 D4 A3)
+    294,349,440,587, 440,349,294,220,
+    // Am   (A3 C4 E4 A4 E4 C4 A3 E3)
+    220,262,330,440, 330,262,220,165,
+    // Bb   (Bb3 D4 F4 Bb4 F4 D4 Bb3 F3)
+    233,294,349,466, 349,294,233,175,
+    // A7 → Dm cadence  (A3 C#4 E4 A4  D4 F4 A4 D5)
+    220,277,330,440, 294,349,440,587
+  ];
+  // Walking bass: one note per 4 sixteenth notes (= quarter note)
+  const bass = [147,110,117,110, 98,117,110,147]; // D2 A2 Bb2 A2 C2 Bb2 A2 D2
+
+  const t0 = audioCtx.currentTime + 0.05;
+  const loopLen = pat.length * S;
+
+  function harpsichordNote(freq, t, dur) {
+    const osc  = audioCtx.createOscillator();
+    const filt = audioCtx.createBiquadFilter();
+    const g    = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    // Slight detuning for richness
+    osc.detune.value = Math.sin(freq) * 4;
+    filt.type = 'bandpass';
+    filt.frequency.value = 1600;
+    filt.Q.value = 1.2;
+    // Very sharp attack, fast pluck decay = harpsichord timbre
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.linearRampToValueAtTime(0.6, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.88);
+    osc.connect(filt); filt.connect(g); g.connect(musicGain);
+    osc.start(t); osc.stop(t + dur);
+  }
+
+  function scheduleLoop(startT) {
+    pat.forEach((freq, i) => {
+      harpsichordNote(freq, startT + i * S, S);
+      // Bass on every 4th note (quarter-note pulse)
+      if (i % 4 === 0) {
+        const bFreq = bass[Math.floor(i / 4) % bass.length];
+        const bosc = audioCtx.createOscillator();
+        const bg   = audioCtx.createGain();
+        bosc.type = 'sine';
+        bosc.frequency.value = bFreq;
+        const bt = startT + i * S;
+        bg.gain.setValueAtTime(0.38, bt);
+        bg.gain.exponentialRampToValueAtTime(0.001, bt + S * 3.8);
+        bosc.connect(bg); bg.connect(musicGain);
+        bosc.start(bt); bosc.stop(bt + S * 4);
+      }
+    });
+    const nextStart = startT + loopLen;
+    setTimeout(() => scheduleLoop(nextStart),
+               Math.max(0, (nextStart - audioCtx.currentTime - 0.5) * 1000));
+  }
+  scheduleLoop(t0);
+}
+
+function _noise(dur, freq, gain) {
+  if (!audioCtx) return;
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter();
+  filt.type = 'highpass';
+  filt.frequency.value = freq;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(gain, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  src.connect(filt); filt.connect(g); g.connect(audioCtx.destination);
+  src.start(); src.stop(audioCtx.currentTime + dur);
+}
+
+function _tone(freq, type, dur, gainVal, startDelay) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime + (startDelay||0);
+  const osc = audioCtx.createOscillator();
+  const g   = audioCtx.createGain();
+  osc.type = type; osc.frequency.value = freq;
+  g.gain.setValueAtTime(gainVal, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + dur);
+}
+
+function sfxSword()  { _noise(0.15, 2000, 0.6); }
+function sfxChime()  { [523,659,784].forEach((f,i)=>_tone(f,'sine',0.25,0.4,i*0.15)); }
+function sfxBwomp()  { _tone(110,'sawtooth',0.2,0.3); }
+function sfxStep()   { _noise(0.05, 800, 0.15); }
+function sfxVictory() {
+  [262,330,392,523].forEach((f,i)=>_tone(f,'sine',0.5,0.35,i*0.12));
+  [523,587,659,784].forEach((f,i)=>_tone(f,'sine',0.3,0.25,0.6+i*0.1));
+}
+
+// ─── DRAWING ─────────────────────────────────────────────────────────────────
+// (filled in step 3)
+function drawBackground(ctx) {
+  // Sky — warm sepia-toned parchment sky
+  const sky = ctx.createLinearGradient(0,0,0,H*0.65);
+  sky.addColorStop(0,'#d4b896'); sky.addColorStop(0.5,'#e8d4a8'); sky.addColorStop(1,'#f2e4c0');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+  // Rough ink horizon scratch marks
+  ctx.save();
+  ctx.strokeStyle='#a07040'; ctx.lineWidth=0.7; ctx.globalAlpha=0.15;
+  for(let i=0;i<12;i++){
+    const hy=H*0.38+jit(i*17,8);
+    ctx.beginPath(); ctx.moveTo(i*80,hy); ctx.lineTo(i*80+60+jit(i*31,20),hy+jit(i*13,3)); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Far castle (silhouette)
+  const cx2 = ((W*0.75 - bgOffset*0.05) % W + W*1.5) % (W*1.5);
+  ctx.fillStyle = '#b08fbf';
+  // hill
+  ctx.beginPath(); ctx.ellipse(cx2,H*0.52,140,60,0,Math.PI,0); ctx.fill();
+  // towers
+  [[cx2-60,H*0.35,18,80],[cx2,H*0.28,22,95],[cx2+60,H*0.35,18,80]].forEach(([tx,ty,tw,th])=>{
+    ctx.fillRect(tx-tw/2,ty,tw,th);
+    ctx.fillRect(tx-tw/2-4,ty-14,tw+8,14);
+    // flag
+    const ft = audioCtx ? frameCount/60 : 0;
+    ctx.fillStyle='#d44';
+    ctx.beginPath();
+    ctx.moveTo(tx,ty-14); ctx.lineTo(tx+18+Math.sin(ft+tx)*4,ty-6); ctx.lineTo(tx,ty+2);
+    ctx.fill(); ctx.fillStyle='#b08fbf';
+  });
+
+  // Distant rolling hills — earthy green, rough outline
+  const hOff = bgOffset*0.15;
+  ctx.fillStyle='#7a9e5a';
+  ctx.beginPath(); ctx.moveTo(0,H*0.62);
+  for(let x=0;x<=W;x+=18){
+    const y=H*0.58+Math.sin((x+hOff)/110)*28+Math.cos((x+hOff)/70)*14
+             +jit(Math.round(x/18)*3+77, 2.5);
+    ctx.lineTo(x,y);
+  }
+  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath(); ctx.fill();
+  // Ink outline on hills
+  ctx.strokeStyle='#4a6a2a'; ctx.lineWidth=1.8; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(0,H*0.62);
+  for(let x=0;x<=W;x+=18){
+    const y=H*0.58+Math.sin((x+hOff)/110)*28+Math.cos((x+hOff)/70)*14
+             +jit(Math.round(x/18)*3+77, 2.5);
+    ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // Mid trees — rough sketchy style
+  const tOff = bgOffset*0.3;
+  ctx.fillStyle='#4a6e35';
+  ctx.strokeStyle='#2d4a1a'; ctx.lineWidth=1.5; ctx.lineJoin='round'; ctx.lineCap='round';
+  for(let tx=(-tOff%180+180)%180-180; tx<W+60; tx+=180){
+    const seed=Math.round(tx/10);
+    // Oak — rough wobbly blob
+    ctx.beginPath();
+    roughCircle(ctx, tx+30, H*0.56, 36, 5, 14);
+    ctx.fillStyle='#4a6e35'; ctx.fill();
+    ctx.strokeStyle='#2d4a1a'; ctx.stroke();
+    // Trunk with slight taper
+    ctx.fillStyle='#6b4226';
+    ctx.beginPath();
+    ctx.moveTo(tx+28+jit(seed,1.5), H*0.56+2);
+    ctx.lineTo(tx+32+jit(seed+1,1.5), H*0.56+2);
+    ctx.lineTo(tx+30+jit(seed+2,1),   H*0.56+46);
+    ctx.lineTo(tx+26+jit(seed+3,1),   H*0.56+46);
+    ctx.closePath(); ctx.fill();
+    // Fir — rough triangle layers
+    const firx=tx+120;
+    [[H*0.42,56],[H*0.48,62]].forEach(([ty,hw])=>{
+      ctx.fillStyle='#3a5c28';
+      ctx.beginPath();
+      ctx.moveTo(firx+jit(seed+10,3), ty);
+      ctx.lineTo(firx+hw+jit(seed+11,4), ty+H*0.2);
+      ctx.lineTo(firx-hw+jit(seed+12,4), ty+H*0.2);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='#243d17'; ctx.stroke();
+    });
+  }
+
+  // Wildflowers on hills
+  const fOff = bgOffset*0.45;
+  for(let i=0;i<30;i++){
+    const fx=((i*97+830-fOff*0.6)%W+W)%W;
+    const fy=H*0.59+Math.sin(i*1.7)*14;
+    const fc=['#ff6b9d','#ffef61','#ff9f43','#a29bfe'][i%4];
+    ctx.fillStyle=fc;
+    ctx.beginPath(); ctx.arc(fx,fy,4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#3d7a3d';
+    ctx.fillRect(fx-1,fy,2,10);
+  }
+
+  // Ground strip — earthy, rough soil edge
+  const gr = ctx.createLinearGradient(0,H*0.72,0,H);
+  gr.addColorStop(0,'#6a9e4a'); gr.addColorStop(0.16,'#5e8e40'); gr.addColorStop(0.18,'#b89058');
+  gr.addColorStop(1,'#8c6438');
+  ctx.fillStyle=gr; ctx.fillRect(0,H*0.72,W,H*0.28);
+  // Rough ink edge where grass meets dirt
+  ctx.strokeStyle='#3d5a1a'; ctx.lineWidth=2; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(0,H*0.737);
+  for(let x=0;x<=W;x+=14){
+    ctx.lineTo(x, H*0.737+jit(Math.round(x/14)*5+200, 3));
+  }
+  ctx.stroke();
+
+  // Cobblestones — wobbly ellipses with ink outlines
+  const cOff = bgOffset*0.6;
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  for(let i=0;i<16;i++){
+    const px=((i*58-cOff)%W+W)%W;
+    const s=i*7+300;
+    const rx=20+jit(s,3), ry=9+jit(s+1,2);
+    ctx.fillStyle= i%2===0 ? '#b08860' : '#a87850';
+    ctx.beginPath(); roughCircle(ctx,px,H*0.86,0,0,0); // use manual path
+    // manual wobbly ellipse
+    ctx.beginPath();
+    for(let j=0;j<=12;j++){
+      const a=(j/12)*Math.PI*2;
+      const epx=px+Math.cos(a)*(rx+jit(s+j,2));
+      const epy=H*0.86+Math.sin(a)*(ry+jit(s+j+6,1.5));
+      j===0?ctx.moveTo(epx,epy):ctx.lineTo(epx,epy);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#6a4820'; ctx.lineWidth=1.2; ctx.stroke();
+    // crack detail
+    ctx.strokeStyle='#7a5530'; ctx.lineWidth=0.7; ctx.globalAlpha=0.4;
+    ctx.beginPath();
+    ctx.moveTo(px-5+jit(s+20,3), H*0.86-2+jit(s+21,2));
+    ctx.lineTo(px+6+jit(s+22,3), H*0.86+3+jit(s+23,2));
+    ctx.stroke(); ctx.globalAlpha=1;
+  }
+
+  // Pennant banners
+  const bOff = bgOffset*0.3;
+  const bannerColors=['#e63946','#f4a261','#2a9d8f','#e9c46a','#a8dadc','#7b2d8b'];
+  for(let bx=(-bOff%240+240)%240-240; bx<W+60; bx+=240){
+    ctx.strokeStyle='#8B6914'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(bx+20,H*0.42); ctx.lineTo(bx+220,H*0.44); ctx.stroke();
+    for(let p=0;p<6;p++){
+      const px=bx+20+p*34;
+      const py=H*0.42+p*(0.02/5)*H;
+      const col=bannerColors[p%6];
+      ctx.fillStyle=col;
+      ctx.beginPath();
+      ctx.moveTo(px,py); ctx.lineTo(px+14,py); ctx.lineTo(px+7,py+18);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+}
+
+function drawKnight(ctx) {
+  const t = frameCount/60;
+  let ky = knight.y;
+  // bob
+  const bob = knight.attacking ? 0 : Math.sin(t*3)*2;
+  ky += bob;
+
+  // walk leg swing
+  let legL=0, legR=0;
+  if (knight.walking) {
+    legL = Math.sin(t*8)*18;
+    legR = -Math.sin(t*8)*18;
+  }
+
+  ctx.save();
+  ctx.translate(knight.x, ky);
+
+  // Cape — flowing ink strokes with rough edge
+  ctx.fillStyle='#5511aa';
+  ctx.beginPath();
+  ctx.moveTo(-8+jit(60,2),-50);
+  ctx.bezierCurveTo(-32,-20,-38+jit(61,3),22,-30+Math.sin(t*2)*9+jit(62,2),58);
+  ctx.lineTo(-8+jit(63,2),52); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#3a0088'; ctx.lineWidth=1.8;
+  ctx.beginPath();
+  ctx.moveTo(-8,-50);
+  ctx.bezierCurveTo(-32,-20,-38+jit(64,3),22,-30+Math.sin(t*2)*9,58);
+  ctx.stroke();
+  // Cape fold highlights
+  ctx.strokeStyle='#8833ee'; ctx.lineWidth=1; ctx.globalAlpha=0.4;
+  ctx.beginPath(); ctx.moveTo(-12,-30); ctx.bezierCurveTo(-22,0,-26,25,-20,50); ctx.stroke();
+  ctx.globalAlpha=1;
+
+  // Legs — rough ink rectangles with boots
+  const drawLeg=(xOff,angle)=>{
+    ctx.save(); ctx.translate(xOff,20);
+    ctx.rotate(angle*Math.PI/180);
+    ctx.fillStyle='#7a9aaa';
+    ctx.beginPath(); roughRect(ctx,-7,0,14,32,1.5); ctx.fill();
+    ctx.strokeStyle='#3a5566'; ctx.lineWidth=1.5; ctx.beginPath(); roughRect(ctx,-7,0,14,32,1.5); ctx.stroke();
+    // Boot
+    ctx.fillStyle='#3d2010';
+    ctx.beginPath(); roughRect(ctx,-9,28,18,13,2); ctx.fill();
+    ctx.strokeStyle='#1a0a00'; ctx.lineWidth=1.2; ctx.beginPath(); roughRect(ctx,-9,28,18,13,2); ctx.stroke();
+    ctx.restore();
+  };
+  drawLeg(-10, legL); drawLeg(10, legR);
+
+  // Set round caps globally for sketchy ink feel
+  ctx.lineCap='round'; ctx.lineJoin='round';
+
+  // Body (torso) — rough ink outline
+  const torsoCol = knight.blocking ? '#d4a820' : '#7a9aaa';
+  ctx.fillStyle = torsoCol;
+  ctx.beginPath(); roughRect(ctx,-20,-50,40,72,2.5); ctx.fill();
+  ctx.strokeStyle='#3a5566'; ctx.lineWidth=2.2;
+  ctx.beginPath(); roughRect(ctx,-20,-50,40,72,2.5); ctx.stroke();
+  // Armour plate lines (hand-drawn detail)
+  ctx.strokeStyle='#3a5566'; ctx.lineWidth=1.2; ctx.globalAlpha=0.55;
+  ctx.beginPath(); ctx.moveTo(-19+jit(1,1.5),-22+jit(2,1)); ctx.lineTo(19+jit(3,1.5),-22+jit(4,1)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-19+jit(5,1.5), -6+jit(6,1)); ctx.lineTo(19+jit(7,1.5),  -6+jit(8,1)); ctx.stroke();
+  ctx.globalAlpha=1;
+  // Cross-hatch shading on right side of torso
+  hatch(ctx, 2,-50,18,72, 5, Math.PI/4, '#3a5566', 0.10);
+
+  // Shield — rough heater shape
+  ctx.fillStyle=knight.blocking?'#e8c800':'#aa1800';
+  ctx.beginPath();
+  ctx.moveTo(-36+jit(20,2),-45+jit(21,1.5));
+  ctx.lineTo(-20+jit(22,1.5),-45+jit(23,1.5));
+  ctx.lineTo(-20+jit(24,1.5),  5+jit(25,1.5));
+  ctx.quadraticCurveTo(-36+jit(26,2),15+jit(27,1.5),-42+jit(28,2),0+jit(29,1.5));
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=2;
+  ctx.beginPath(); roughRect(ctx,-42,-46,22,52,2); ctx.stroke();
+  // Gold cross on shield
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(-31+jit(30,1),-20+jit(31,1)); ctx.lineTo(-31+jit(32,1),5+jit(33,1)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-42+jit(34,1),-6+jit(35,1)); ctx.lineTo(-20+jit(36,1),-6+jit(37,1)); ctx.stroke();
+
+  // Sword arm + sword
+  let swordAngle = -15;
+  if (knight.attacking) {
+    const prog = 1 - knight.attackTimer/36;
+    swordAngle = prog < 0.5 ? -80 + prog*2*140 : 60 - (prog*2-1)*75;
+  }
+  ctx.save(); ctx.translate(20,-30); ctx.rotate(swordAngle*Math.PI/180);
+  // arm
+  ctx.fillStyle='#7a9aaa';
+  ctx.beginPath(); roughRect(ctx,-5,0,10,25,1.5); ctx.fill();
+  // blade — slightly tapered, rough edges
+  ctx.fillStyle='#d4d4e8';
+  ctx.beginPath();
+  ctx.moveTo(-3+jit(40,1),25); ctx.lineTo(3+jit(41,1),25);
+  ctx.lineTo(1+jit(42,0.8),95); ctx.lineTo(-1+jit(43,0.8),95);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#8888aa'; ctx.lineWidth=1; ctx.stroke();
+  // blade shine scratch
+  ctx.strokeStyle='#fff'; ctx.lineWidth=0.8; ctx.globalAlpha=0.5;
+  ctx.beginPath(); ctx.moveTo(-1,30); ctx.lineTo(0,80); ctx.stroke(); ctx.globalAlpha=1;
+  // hilt cross
+  ctx.fillStyle='#cc9900';
+  ctx.beginPath(); roughRect(ctx,-14,22,28,6,1.5); ctx.fill();
+  ctx.strokeStyle='#8B6914'; ctx.lineWidth=1.2; ctx.beginPath(); roughRect(ctx,-14,22,28,6,1.5); ctx.stroke();
+  // gem
+  ctx.fillStyle='#dd2244'; ctx.beginPath(); roughCircle(ctx,0,25,4,0.8,8); ctx.fill();
+  ctx.restore();
+
+  // Head / Helmet — rough dome
+  ctx.fillStyle='#7a9aaa';
+  ctx.beginPath(); roughCircle(ctx,0,-65,22,2,12); ctx.fill();
+  ctx.strokeStyle='#3a5566'; ctx.lineWidth=2;
+  ctx.beginPath(); roughCircle(ctx,0,-65,22,2,12); ctx.stroke();
+  // Neck guard
+  ctx.fillStyle='#7a9aaa';
+  ctx.beginPath(); roughRect(ctx,-22,-65,44,28,2); ctx.fill();
+  ctx.strokeStyle='#3a5566'; ctx.lineWidth=2;
+  ctx.beginPath(); roughRect(ctx,-22,-65,44,28,2); ctx.stroke();
+  // Visor — dark slit
+  ctx.fillStyle='#111122';
+  ctx.beginPath(); roughRect(ctx,-16,-63,32,16,1.5); ctx.fill();
+  ctx.strokeStyle='#444'; ctx.lineWidth=1; ctx.beginPath(); roughRect(ctx,-16,-63,32,16,1.5); ctx.stroke();
+  // Rivets on helmet
+  [[-15,-58],[15,-58],[0,-72]].forEach(([rx,ry])=>{
+    ctx.fillStyle='#aabbc8'; ctx.beginPath(); ctx.arc(rx+jit(rx,1),ry+jit(ry,1),2,0,Math.PI*2); ctx.fill();
+  });
+  // Plume — ink strokes curving up and back above helmet
+  ctx.lineCap='round';
+  for(let p=0;p<6;p++){
+    const wave=Math.sin(t*4+p)*5;
+    ctx.strokeStyle=p%2===0?'#cc2244':'#ee3366';
+    ctx.lineWidth=2+p%2*1.5;
+    ctx.beginPath();
+    ctx.moveTo(-2+jit(p,1.5), -84+jit(p+1,1.5));
+    ctx.quadraticCurveTo(
+      -14+wave+p*2, -100-p*4,
+       -6+wave+p*3, -110-p*5
+    );
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawEnemy(ctx) {
+  if (!enemy.active) return;
+  const t = frameCount/60;
+
+  // Determine glyph/color/label based on phase
+  let glyph, col, hatCol, labelText;
+  if (gamePhase === 'LETTERS') {
+    glyph = ALPHABET[currentIndex];
+    col = LETTER_COLORS[currentIndex];
+    hatCol = HAT_COLORS[currentIndex];
+    labelText = `The Dastardly Letter ${glyph}!`;
+  } else {
+    glyph = NUMBERS[numberIndex];
+    col = NUMBER_COLORS[numberIndex];
+    hatCol = NUMBER_HAT_COLORS[numberIndex];
+    labelText = `The Nefarious Number ${glyph}!`;
+  }
+
+  const ex = enemy.x;
+  const ey = enemy.y;
+
+  ctx.save();
+  if (enemy.defeated) {
+    ctx.translate(ex, ey);
+    ctx.rotate(enemy.defeatAngle);
+    ctx.scale(enemy.defeatScale, enemy.defeatScale);
+  } else {
+    const bounce = Math.sin(t*3)*6;
+    ctx.translate(ex, ey + bounce);
+  }
+
+  // Glowing aura
+  if (!enemy.defeated) {
+    const aura = ctx.createRadialGradient(0,0,35,0,0,85);
+    aura.addColorStop(0, col+'55');
+    aura.addColorStop(1, col+'00');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(0,0,85,0,Math.PI*2); ctx.fill();
+  }
+
+  // Giant letter glyph — the enemy IS the letter
+  ctx.font = 'bold 130px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = '#1a0a00';
+  ctx.lineWidth = 5;
+  ctx.strokeText(glyph, 0, 0);
+  ctx.fillStyle = enemy.hitFlash > 0 ? '#ffffff' : col;
+  ctx.fillText(glyph, 0, 0);
+
+  // Arms — curved lines from letter sides
+  ctx.strokeStyle = '#553322';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-55,-12); ctx.quadraticCurveTo(-78,5,-72,28); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(55,-12); ctx.quadraticCurveTo(78,5,72,28); ctx.stroke();
+
+  // Legs — oval boots below baseline
+  ctx.fillStyle = '#553322';
+  ctx.beginPath(); ctx.ellipse(-22,60,16,10,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(22,60,16,10,-0.3,0,Math.PI*2); ctx.fill();
+
+  // Eyes — upper-right area of letter
+  [[18,-28],[40,-28]].forEach(([ex2,ey2])=>{
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(ex2,ey2,9,9,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#222'; ctx.beginPath(); ctx.arc(ex2+1.5,ey2+1,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex2+3,ey2-1,2,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#333'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(ex2-7,ey2-10); ctx.lineTo(ex2+7,ey2-12); ctx.stroke();
+  });
+
+  // Hat — pointy wizard hat on top of letter
+  ctx.fillStyle = hatCol;
+  ctx.beginPath();
+  ctx.moveTo(0,-118); ctx.lineTo(-28,-75); ctx.lineTo(28,-75); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(-32,-81,64,8);
+  ctx.fillStyle='#fffde7';
+  ctx.font='14px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('★',0,-105);
+
+  // Health hearts above hat
+  for (let h=0; h<3; h++) {
+    const hx = -22 + h*22;
+    const hy = -148;
+    ctx.font='18px serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle = h < (3 - enemy.hits) ? '#e63946' : '#555';
+    ctx.fillText('♥', hx, hy);
+  }
+
+  ctx.restore();
+
+  // Name label
+  if (!enemy.defeated) {
+    const bounce2 = Math.sin(frameCount/60*3)*6;
+    ctx.fillStyle='#3d1a00';
+    ctx.font='italic 13px Georgia,serif';
+    ctx.textAlign='center';
+    ctx.fillText(labelText, ex, ey + bounce2 + 82);
+  }
+}
+
+function drawWordEnemy(ctx) {
+  if (!enemy.active) return;
+  const t = frameCount/60;
+  const word = WORDS[wordIndex];
+  const col = WORD_COLORS[wordIndex];
+  const ex = enemy.x;
+  const ey = enemy.y;
+
+  ctx.save();
+  if (enemy.defeated) {
+    ctx.translate(ex, ey);
+    ctx.rotate(enemy.defeatAngle);
+    ctx.scale(enemy.defeatScale, enemy.defeatScale);
+  } else {
+    const bounce = Math.sin(t*3)*6;
+    ctx.translate(ex, ey + bounce);
+  }
+
+  // Glowing aura
+  if (!enemy.defeated) {
+    const aura = ctx.createRadialGradient(0,0,40,0,0,95);
+    aura.addColorStop(0, col+'55');
+    aura.addColorStop(1, col+'00');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(0,0,95,0,Math.PI*2); ctx.fill();
+  }
+
+  ctx.lineCap='round'; ctx.lineJoin='round';
+
+  // BEE wings and SUN rays drawn behind bubble
+  if (word === 'BEE') {
+    ctx.fillStyle='rgba(200,230,255,0.75)';
+    ctx.strokeStyle='#88aacc'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(-95,-15,26,18,0.4,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(95,-15,26,18,-0.4,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  }
+  if (word === 'SUN') {
+    ctx.strokeStyle='#ffd700'; ctx.lineWidth=5; ctx.lineCap='round';
+    for(let r=0;r<8;r++){
+      const a=(r/8)*Math.PI*2+t*0.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*72, Math.sin(a)*58);
+      ctx.lineTo(Math.cos(a)*105, Math.sin(a)*85);
+      ctx.stroke();
+    }
+  }
+
+  // Bubble container
+  const bubFill = enemy.hitFlash > 0 ? '#ffffff' : '#fdf6e3';
+  const bubStroke = enemy.hitFlash > 0 ? '#ff3333' : col;
+  ctx.fillStyle = bubFill;
+  ctx.strokeStyle = bubStroke;
+  ctx.lineWidth = enemy.hitFlash > 0 ? 6 : 3.5;
+  if (word === 'BOX') {
+    ctx.beginPath(); ctx.rect(-85,-62,170,92); ctx.fill(); ctx.stroke();
+  } else {
+    const bSeed=(wordIndex+50)*13;
+    ctx.beginPath();
+    for(let i=0;i<=16;i++){
+      const a=(i/16)*Math.PI*2;
+      const rx=88+jit(bSeed+i*2,5);
+      const ry=58+jit(bSeed+i*2+1,5);
+      const px=Math.cos(a)*rx, py=Math.sin(a)*ry-8;
+      i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+
+  // BEE stripes on bubble
+  if (word === 'BEE') {
+    ctx.save();
+    ctx.globalAlpha=0.45; ctx.strokeStyle='#1a0a00'; ctx.lineWidth=9;
+    for(let s=0;s<3;s++){
+      const sy=-28+s*22;
+      ctx.beginPath(); ctx.moveTo(-78,sy); ctx.lineTo(78,sy); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Word letters with per-letter colouring
+  const letterSpacing=54;
+  const startX=-(word.length-1)/2*letterSpacing;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 48px Georgia,serif';
+  for(let i=0;i<word.length;i++){
+    let lc;
+    if(enemy.hits>i)       lc='#2ecc71';
+    else if(enemy.hits===i) lc=Math.sin(t*8)>0?'#ffd700':'#ffaa00';
+    else                   lc='#999';
+    const lx=startX+i*letterSpacing;
+    ctx.strokeStyle='#1a0a00'; ctx.lineWidth=3;
+    ctx.strokeText(word[i],lx,-8);
+    ctx.fillStyle=lc; ctx.fillText(word[i],lx,-8);
+  }
+
+  // Word-specific decorations over bubble
+  switch(word){
+    case 'CAT':
+      ctx.fillStyle='#cc8833';
+      ctx.beginPath(); ctx.moveTo(-52,-60); ctx.lineTo(-28,-44); ctx.lineTo(-18,-70); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(52,-60); ctx.lineTo(28,-44); ctx.lineTo(18,-70); ctx.closePath(); ctx.fill();
+      break;
+    case 'DOG':
+      ctx.fillStyle='#aa7744'; ctx.strokeStyle='#664422'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(-85,-8,18,30,-0.3,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(85,-8,18,30,0.3,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      break;
+    case 'PIG':
+      ctx.fillStyle='#ffbbcc';
+      ctx.beginPath(); ctx.ellipse(-38,-62,13,18,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(38,-62,13,18,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#ffaaaa';
+      ctx.beginPath(); ctx.ellipse(0,42,22,14,0,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='#cc6677'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.ellipse(0,42,22,14,0,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='#cc6677';
+      ctx.beginPath(); ctx.ellipse(-7,42,4,5,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(7,42,4,5,0,0,Math.PI*2); ctx.fill();
+      break;
+    case 'HAT':
+      ctx.fillStyle='#1a1a2e';
+      ctx.fillRect(-30,-118,60,48); ctx.fillRect(-42,-72,84,12);
+      ctx.strokeStyle='#444'; ctx.lineWidth=2;
+      ctx.strokeRect(-30,-118,60,48); ctx.strokeRect(-42,-72,84,12);
+      ctx.fillStyle='#8B6914'; ctx.fillRect(-30,-82,60,9);
+      break;
+    case 'FOX':
+      ctx.fillStyle='#ff6622';
+      ctx.beginPath(); ctx.moveTo(-52,-60); ctx.lineTo(-30,-42); ctx.lineTo(-12,-72); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(52,-60); ctx.lineTo(30,-42); ctx.lineTo(12,-72); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#ffccaa';
+      ctx.beginPath(); ctx.moveTo(-46,-60); ctx.lineTo(-30,-46); ctx.lineTo(-18,-66); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(46,-60); ctx.lineTo(30,-46); ctx.lineTo(18,-66); ctx.closePath(); ctx.fill();
+      break;
+    case 'CUP':
+      ctx.strokeStyle='#8B6914'; ctx.lineWidth=6; ctx.lineCap='round';
+      ctx.beginPath(); ctx.arc(95,-2,26,-Math.PI*0.55,Math.PI*0.55); ctx.stroke();
+      break;
+    case 'HEN':
+      ctx.fillStyle='#cc2222';
+      ctx.beginPath(); ctx.ellipse(50,-58,10,18,0.3,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#ffaa00';
+      ctx.beginPath(); ctx.moveTo(86,4); ctx.lineTo(110,-2); ctx.lineTo(86,18); ctx.closePath(); ctx.fill();
+      break;
+    case 'COW':
+      ctx.strokeStyle='#ccaa66'; ctx.lineWidth=5; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(-30,-62); ctx.quadraticCurveTo(-52,-92,-36,-84); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(30,-62); ctx.quadraticCurveTo(52,-92,36,-84); ctx.stroke();
+      ctx.fillStyle='#2a2a2a';
+      ctx.beginPath(); ctx.ellipse(-28,0,16,11,0.3,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(26,-24,12,9,-0.2,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(40,18,10,8,0.4,0,Math.PI*2); ctx.fill();
+      break;
+    case 'BOX':
+      ctx.strokeStyle='#8B6914'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(-85,-62); ctx.lineTo(85,-62); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,-62); ctx.lineTo(0,30); ctx.stroke();
+      break;
+    case 'BED':
+      ctx.fillStyle='#aad4ff';
+      ctx.font='bold 20px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      for(let z=0;z<3;z++){
+        const zt=(t*1.2+z*0.9)%3;
+        ctx.globalAlpha=Math.max(0,1-zt/3);
+        ctx.fillText('Z',-20+z*22,-75-zt*18);
+      }
+      ctx.globalAlpha=1;
+      break;
+  }
+
+  // Eyes
+  [[-14,26],[14,26]].forEach(([ex2,ey2])=>{
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(ex2,ey2,9,9,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#222'; ctx.beginPath(); ctx.arc(ex2+1.5,ey2+1,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex2+3,ey2-1,2,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#333'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(ex2-7,ey2-10); ctx.lineTo(ex2+7,ey2-12); ctx.stroke();
+  });
+  // Grin
+  ctx.strokeStyle='#333'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.arc(0,34,14,0.2,Math.PI-0.2); ctx.stroke();
+
+  // Hearts above bubble
+  for(let h=0;h<3;h++){
+    const hx=-22+h*22, hy=-104;
+    ctx.font='18px serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle=h<(3-enemy.hits)?'#e63946':'#555';
+    ctx.fillText('♥',hx,hy);
+  }
+
+  ctx.restore();
+
+  // Name label
+  if(!enemy.defeated){
+    const bounce2=Math.sin(frameCount/60*3)*6;
+    ctx.fillStyle='#3d1a00';
+    ctx.font='italic 13px Georgia,serif';
+    ctx.textAlign='center';
+    ctx.fillText(`The Dastardly ${word}!`, ex, ey+bounce2+78);
+  }
+}
+
+function drawParticles(ctx) {
+  particles.forEach(p=>{
+    ctx.save();
+    ctx.globalAlpha = p.life/p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawHUD(ctx) {
+  // Phase progress strip at top
+  const stripH = 38;
+  ctx.fillStyle='#fffde7dd';
+  ctx.beginPath(); ctx.roundRect(10,8,W-20,stripH,10); ctx.fill();
+  ctx.strokeStyle='#8B6914'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(10,8,W-20,stripH,10); ctx.stroke();
+
+  if (gamePhase === 'LETTERS') {
+    const chipW=(W-40)/26;
+    ALPHABET.forEach((letter,i)=>{
+      const cx2=20+i*chipW+chipW/2, cy=8+stripH/2, r=13;
+      if(i<currentIndex){
+        ctx.fillStyle='#2ecc71';
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='bold 13px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(letter,cx2,cy);
+      } else if(i===currentIndex){
+        const pulse=1+Math.sin(frameCount/8)*0.15;
+        ctx.fillStyle='#ffd700';
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#c8960c'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#1a0a00'; ctx.font='bold 13px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(letter,cx2,cy);
+      } else {
+        ctx.strokeStyle='#aaa'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#999'; ctx.font='11px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(letter,cx2,cy);
+      }
+    });
+    ctx.fillStyle='#3d1a00'; ctx.font='bold 14px Georgia'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText(`Letter ${currentIndex+1} of 26`,14,H-8);
+
+  } else if (gamePhase === 'WORDS') {
+    const chipW=(W-40)/12;
+    WORDS.forEach((word,i)=>{
+      const cx2=20+i*chipW+chipW/2, cy=8+stripH/2, r=13;
+      if(i<wordIndex){
+        ctx.fillStyle='#2ecc71';
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='bold 11px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(word[0],cx2,cy);
+      } else if(i===wordIndex){
+        const pulse=1+Math.sin(frameCount/8)*0.15;
+        ctx.fillStyle=WORD_COLORS[i];
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#c8960c'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#fff'; ctx.font='bold 11px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(word[0],cx2,cy);
+      } else {
+        ctx.strokeStyle='#aaa'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#999'; ctx.font='9px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(word[0],cx2,cy);
+      }
+    });
+    ctx.fillStyle='#3d1a00'; ctx.font='bold 14px Georgia'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText(`Word ${wordIndex+1} of 12`,14,H-8);
+
+  } else if (gamePhase === 'NUMBERS') {
+    const chipW=(W-40)/10;
+    NUMBERS.forEach((num,i)=>{
+      const cx2=20+i*chipW+chipW/2, cy=8+stripH/2, r=13;
+      if(i<numberIndex){
+        ctx.fillStyle='#2ecc71';
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='bold 13px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(num,cx2,cy);
+      } else if(i===numberIndex){
+        const pulse=1+Math.sin(frameCount/8)*0.15;
+        ctx.fillStyle=NUMBER_COLORS[i];
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#c8960c'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#fff'; ctx.font='bold 13px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(num,cx2,cy);
+      } else {
+        ctx.strokeStyle='#aaa'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#999'; ctx.font='11px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(num,cx2,cy);
+      }
+    });
+    ctx.fillStyle='#3d1a00'; ctx.font='bold 14px Georgia'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText(`Number ${numberIndex+1} of 10`,14,H-8);
+  }
+
+  // Battle prompt
+  if (state === 'BATTLE') {
+    if (gamePhase === 'WORDS') {
+      // Show word with each letter in a coloured box
+      const word=WORDS[wordIndex];
+      const boxW=58, boxH=60, gap=8;
+      const totalW=word.length*boxW+(word.length-1)*gap;
+      const bx0=W/2-totalW/2, by=H*0.6;
+      ctx.fillStyle='#fffde7ee';
+      ctx.beginPath(); ctx.roundRect(bx0-16,by,totalW+32,boxH+32,16); ctx.fill();
+      ctx.strokeStyle='#ffd700'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.roundRect(bx0-16,by,totalW+32,boxH+32,16); ctx.stroke();
+      ctx.fillStyle='#1a0a00'; ctx.font='bold 14px Georgia'; ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.fillText(`Type the word! (${enemy.hits}/3)`,W/2,by+5);
+      for(let i=0;i<word.length;i++){
+        let bgCol,textCol;
+        if(enemy.hits>i){bgCol='#2ecc71';textCol='#fff';}
+        else if(enemy.hits===i){bgCol=Math.sin(frameCount/8)>0?'#ffd700':'#ffaa00';textCol='#1a0a00';}
+        else{bgCol='#888';textCol='#ddd';}
+        const lx=bx0+i*(boxW+gap);
+        ctx.fillStyle=bgCol;
+        ctx.beginPath(); ctx.roundRect(lx,by+20,boxW,boxH,10); ctx.fill();
+        ctx.fillStyle=textCol;
+        ctx.font='bold 38px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(word[i],lx+boxW/2,by+20+boxH/2);
+      }
+    } else {
+      // Letters or Numbers: key blink prompt
+      const displayKey = gamePhase==='LETTERS' ? ALPHABET[currentIndex] : NUMBERS[numberIndex];
+      const blink=Math.floor(frameCount/18)%2===0;
+      ctx.fillStyle='#fffde7ee';
+      ctx.beginPath(); ctx.roundRect(W/2-130,H*0.6,260,80,16); ctx.fill();
+      ctx.strokeStyle='#ffd700'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.roundRect(W/2-130,H*0.6,260,80,16); ctx.stroke();
+      ctx.fillStyle='#1a0a00'; ctx.font='bold 22px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(`Press the key: (${enemy.hits}/3 hits)`,W/2,H*0.6+22);
+      if(blink){
+        ctx.fillStyle='#c8960c'; ctx.font='bold 52px Georgia'; ctx.textBaseline='middle';
+        ctx.fillText(displayKey,W/2,H*0.6+58);
+      }
+    }
+  }
+}
+
+function drawTitle(ctx) {
+  // Amber vignette
+  const vig = ctx.createRadialGradient(W/2,H/2,80,W/2,H/2,Math.max(W,H)*0.75);
+  vig.addColorStop(0,'transparent'); vig.addColorStop(1,'#40200880');
+  ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
+
+  // Title banner scroll
+  ctx.fillStyle='#fffde7';
+  ctx.beginPath(); ctx.roundRect(80,80,W-160,110,16); ctx.fill();
+  ctx.strokeStyle='#8B6914'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.roundRect(80,80,W-160,110,16); ctx.stroke();
+  // Scroll curl ends
+  ctx.fillStyle='#f5e6b0';
+  ctx.beginPath(); ctx.ellipse(80,135,14,55,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(W-80,135,14,55,0,0,Math.PI*2); ctx.fill();
+
+  // Title text
+  ctx.fillStyle='#8B4513';
+  ctx.strokeStyle='#ffd700';
+  ctx.lineWidth=3;
+  ctx.font='bold 36px Georgia,serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.strokeText("Sir Knight's Alphabet Adventure",W/2,118);
+  ctx.fillText("Sir Knight's Alphabet Adventure",W/2,118);
+  ctx.font='italic 18px Georgia,serif';
+  ctx.fillStyle='#5a3010';
+  ctx.fillText('Defeat the letters A–Z to save the Kingdom!',W/2,158);
+
+  // Animated title knight (left)
+  ctx.save(); ctx.translate(120,340);
+  const t = frameCount/60;
+  const kb = Math.sin(t*4)*3;
+  ctx.translate(0,kb);
+  // simple mini knight
+  ctx.fillStyle='#8aaabb'; ctx.beginPath(); ctx.roundRect(-15,-40,30,55,6); ctx.fill();
+  ctx.fillStyle='#7722cc';
+  ctx.beginPath(); ctx.moveTo(-6,-40); ctx.bezierCurveTo(-20,-10,-22,20,-18,45); ctx.lineTo(-6,40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#8aaabb'; ctx.beginPath(); ctx.arc(0,-55,16,Math.PI,0); ctx.fill(); ctx.fillRect(-16,-55,32,20);
+  ctx.fillStyle='#1a1a2e'; ctx.beginPath(); ctx.roundRect(-12,-53,24,13,2); ctx.fill();
+  ctx.strokeStyle='#ff4466'; ctx.lineWidth=3;
+  for(let p=0;p<4;p++){ ctx.beginPath(); ctx.moveTo(-3,-70); ctx.quadraticCurveTo(Math.sin(t*4+p)*5-5+p*3,-60,-3+p*2,-47+p); ctx.stroke(); }
+  ctx.fillStyle='#cc2200'; ctx.beginPath(); ctx.moveTo(-28,-35); ctx.lineTo(-16,-35); ctx.lineTo(-16,5); ctx.quadraticCurveTo(-28,12,-32,0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Animated letter A enemy (right)
+  ctx.save(); ctx.translate(W-130,340);
+  const ab = Math.sin(t*3)*6;
+  ctx.translate(0,ab);
+  ctx.fillStyle='#fffde7'; ctx.strokeStyle=LETTER_COLORS[0]; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.roundRect(-36,-50,72,70,14); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=LETTER_COLORS[0]; ctx.font='bold 60px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('A',0,-12);
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(-10,22,7,7,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(10,22,7,7,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#333'; ctx.beginPath(); ctx.arc(-8,23,3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(12,23,3,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // Tiny dragon in sky
+  const dx = ((frameCount*0.8)%(W+100))-60;
+  const dy = 220 + Math.sin(frameCount/40)*18;
+  ctx.save(); ctx.translate(dx,dy);
+  const wingFlap = Math.sin(frameCount/8)*0.4;
+  ctx.fillStyle='#9b59b6';
+  ctx.beginPath(); ctx.ellipse(0,0,22,10,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(18,0,9,0,Math.PI*2); ctx.fill();
+  // wings
+  ctx.beginPath(); ctx.moveTo(-5,-5); ctx.lineTo(-30,-5-wingFlap*25); ctx.lineTo(-15,8); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-5,5); ctx.lineTo(-30,5+wingFlap*25); ctx.lineTo(-15,-8); ctx.fill();
+  // tiny flag
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(20,-9); ctx.lineTo(20,-22); ctx.stroke();
+  ctx.fillStyle='#e63946'; ctx.beginPath(); ctx.moveTo(20,-22); ctx.lineTo(32,-17); ctx.lineTo(20,-12); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Click to start
+  blinkTimer++;
+  if (Math.floor(blinkTimer/35)%2===0) {
+    ctx.fillStyle='#ffd700';
+    ctx.font='bold 22px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.shadowColor='#8B6914'; ctx.shadowBlur=8;
+    ctx.fillText('Click anywhere to begin your quest!',W/2,H-38);
+    ctx.shadowBlur=0;
+  }
+}
+
+function drawVictory(ctx) {
+  // Amber overlay
+  ctx.fillStyle='#fffde7cc';
+  ctx.fillRect(0,0,W,H);
+
+  // Gold stars raining
+  stars.forEach(s=>{
+    ctx.fillStyle='#ffd700';
+    ctx.font=`${s.size}px serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('★',s.x,s.y);
+  });
+
+  // Ornate border
+  ctx.strokeStyle='#8B6914'; ctx.lineWidth=6;
+  ctx.beginPath(); ctx.roundRect(30,30,W-60,H-60,20); ctx.stroke();
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(38,38,W-76,H-76,16); ctx.stroke();
+
+  // Victory text
+  ctx.fillStyle='#8B4513';
+  ctx.font='bold 52px Georgia,serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=4;
+  ctx.strokeText('THE END',W/2,100);
+  ctx.fillText('THE END',W/2,100);
+  ctx.font='bold 24px Georgia';
+  ctx.fillText('You mastered Letters, Words & Numbers!',W/2,148);
+
+  // Letter grid
+  const cols=13, chipSize=28, gapX=32, startX=(W-(cols*gapX))/2+16;
+  ALPHABET.forEach((letter,i)=>{
+    const col2=i%cols, row=Math.floor(i/cols);
+    const cx2=startX+col2*gapX, cy2=190+row*38;
+    ctx.fillStyle='#2ecc71';
+    ctx.beginPath(); ctx.arc(cx2,cy2,13,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 13px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(letter,cx2,cy2);
+  });
+
+  // Celebrating knight
+  ctx.save(); ctx.translate(180,380);
+  const t=frameCount/60;
+  const jmp=Math.abs(Math.sin(t*4))*-20;
+  ctx.translate(0,jmp);
+  ctx.fillStyle='#8aaabb'; ctx.beginPath(); ctx.roundRect(-15,-40,30,55,6); ctx.fill();
+  ctx.fillStyle='#7722cc'; ctx.beginPath(); ctx.moveTo(-6,-40); ctx.bezierCurveTo(-20,-10,-22,20,-18,45); ctx.lineTo(-6,40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#8aaabb'; ctx.beginPath(); ctx.arc(0,-55,16,Math.PI,0); ctx.fill(); ctx.fillRect(-16,-55,32,20);
+  ctx.fillStyle='#1a1a2e'; ctx.beginPath(); ctx.roundRect(-12,-53,24,13,2); ctx.fill();
+  // sword raised
+  ctx.save(); ctx.translate(16,-20); ctx.rotate(-Math.PI/2+Math.sin(t*4)*0.3);
+  ctx.fillStyle='#e8e8f0'; ctx.beginPath(); ctx.moveTo(-2,0); ctx.lineTo(2,0); ctx.lineTo(1,70); ctx.lineTo(-1,70); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#ffd700'; ctx.fillRect(-12,-4,24,5);
+  ctx.restore();
+  ctx.restore();
+
+  // Play Again button
+  ctx.fillStyle='#8B6914';
+  ctx.beginPath(); ctx.roundRect(W/2-90,H-95,180,48,12); ctx.fill();
+  ctx.fillStyle='#ffd700'; ctx.font='bold 22px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('⚜ Play Again ⚜',W/2,H-71);
+}
+
+// ─── GAME LOGIC ──────────────────────────────────────────────────────────────
+// (filled in step 4)
+let stepTimer = 0;
+
+function update() {
+  blinkTimer++;
+  frameCount++;
+
+  if (state === 'TITLE' || state === 'VICTORY') {
+    // Animate victory stars
+    if (state === 'VICTORY') {
+      stars.forEach(s=>{ s.y += s.speed; if(s.y>H+20) s.y=-20; });
+    }
+    return;
+  }
+
+  // Update particles
+  particles.forEach(p=>{
+    p.x += p.vx; p.y += p.vy; p.vy += 0.2;
+    p.life--;
+  });
+  particles = particles.filter(p=>p.life>0);
+
+  // Knight block flash decay
+  if (knight.blockTimer > 0) {
+    knight.blockTimer--;
+    if (knight.blockTimer === 0) knight.blocking = false;
+  }
+
+  if (state === 'PLAYING') {
+    knight.walking = true;
+    bgOffset += 1.5;
+
+    // Footstep SFX
+    stepTimer++;
+    if (stepTimer >= 26) { stepTimer=0; sfxStep(); }
+
+    // Enemy walks left
+    if (enemy.active && enemy.x > 490) {
+      enemy.x -= 1.5;
+    } else if (enemy.active && enemy.x <= 490) {
+      // Enter battle
+      enemy.x = 490;
+      knight.walking = false;
+      state = 'BATTLE';
+    }
+
+  } else if (state === 'BATTLE') {
+    knight.walking = false;
+
+    // Knight attack animation
+    if (knight.attacking) {
+      knight.attackTimer--;
+      if (knight.attackTimer <= 0) {
+        knight.attacking = false;
+        registerHit();
+      }
+    }
+    // Hit flash decay
+    if (enemy.hitFlash > 0) enemy.hitFlash--;
+
+  } else if (state === 'LETTER_DEFEATED') {
+    enemy.defeatTimer--;
+    enemy.defeatAngle += 0.18;
+    enemy.defeatScale = Math.max(0, enemy.defeatTimer/42);
+
+    if (enemy.defeatTimer <= 0) {
+      enemy.active = false;
+      enemy.defeated = false;
+      enemy.defeatScale = 1;
+      enemy.defeatAngle = 0;
+
+      if (gamePhase === 'LETTERS') {
+        currentIndex++;
+        if (currentIndex >= 26) {
+          gamePhase = 'WORDS';
+          wordIndex = 0;
+          state = 'PLAYING';
+          spawnEnemy();
+        } else {
+          state = 'PLAYING';
+          spawnEnemy();
+        }
+      } else if (gamePhase === 'WORDS') {
+        wordIndex++;
+        if (wordIndex >= WORDS.length) {
+          gamePhase = 'NUMBERS';
+          numberIndex = 0;
+          state = 'PLAYING';
+          spawnEnemy();
+        } else {
+          state = 'PLAYING';
+          spawnEnemy();
+        }
+      } else if (gamePhase === 'NUMBERS') {
+        numberIndex++;
+        if (numberIndex >= NUMBERS.length) {
+          state = 'VICTORY';
+          sfxVictory();
+          spawnStars();
+        } else {
+          state = 'PLAYING';
+          spawnEnemy();
+        }
+      }
+    }
+  }
+}
+
+function spawnEnemy() {
+  enemy.x = 880;
+  enemy.y = 360;
+  enemy.active = true;
+  enemy.defeated = false;
+  enemy.defeatTimer = 0;
+  enemy.defeatAngle = 0;
+  enemy.defeatScale = 1;
+  enemy.hits = 0;
+  enemy.hitFlash = 0;
+}
+
+function triggerAttack() {
+  if (knight.attacking) return;
+  knight.attacking = true;
+  knight.attackTimer = 36;
+  sfxSword();
+}
+
+function currentColor() {
+  if (gamePhase === 'LETTERS') return LETTER_COLORS[currentIndex];
+  if (gamePhase === 'NUMBERS') return NUMBER_COLORS[numberIndex];
+  return WORD_COLORS[wordIndex];
+}
+
+function registerHit() {
+  enemy.hits++;
+  spawnParticles(enemy.x, enemy.y - 20, currentColor());
+  if (enemy.hits >= 3) {
+    triggerDefeat();
+  } else {
+    enemy.hitFlash = 22;
+    sfxChime();
+  }
+}
+
+function triggerDefeat() {
+  enemy.defeated = true;
+  enemy.defeatTimer = 42;
+  state = 'LETTER_DEFEATED';
+  sfxChime();
+  spawnParticles(enemy.x, enemy.y, currentColor());
+}
+
+function spawnParticles(x,y,color) {
+  for (let i=0;i<14;i++) {
+    const angle = (i/14)*Math.PI*2;
+    const speed = 3+Math.random()*4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle)*speed,
+      vy: Math.sin(angle)*speed - 2,
+      r: 4+Math.random()*4,
+      color,
+      life: 40+Math.random()*20,
+      maxLife: 60
+    });
+  }
+}
+
+function spawnStars() {
+  stars = [];
+  for(let i=0;i<30;i++){
+    stars.push({
+      x: Math.random()*W,
+      y: Math.random()*H - H,
+      speed: 1+Math.random()*2,
+      size: 14+Math.random()*18
+    });
+  }
+}
+
+function resetGame() {
+  gamePhase = 'LETTERS';
+  currentIndex = 0;
+  numberIndex = 0;
+  wordIndex = 0;
+  bgOffset = 0;
+  frameCount = 0;
+  particles = [];
+  stars = [];
+  knight.walking = false;
+  knight.attacking = false;
+  knight.blocking = false;
+  knight.attackTimer = 0;
+  knight.blockTimer = 0;
+  enemy.active = false;
+  enemy.defeated = false;
+  state = 'PLAYING';
+  spawnEnemy();
+}
+
+// ─── MAIN LOOP ────────────────────────────────────────────────────────────────
+// (filled in step 4)
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+function loop() {
+  update();
+  ctx.clearRect(0,0,W,H);
+  if (state === 'TITLE') {
+    drawBackground(ctx);
+    drawTitle(ctx);
+  } else if (state === 'VICTORY') {
+    drawBackground(ctx);
+    drawVictory(ctx);
+  } else {
+    drawBackground(ctx);
+    drawParticles(ctx);
+    drawKnight(ctx);
+    if (enemy.active) {
+      if (gamePhase === 'WORDS') drawWordEnemy(ctx);
+      else drawEnemy(ctx);
+    }
+    drawHUD(ctx);
+  }
+  drawPaperOverlay(ctx);
+  requestAnimationFrame(loop);
+}
+
+// ─── EVENT LISTENERS ─────────────────────────────────────────────────────────
+canvas.addEventListener('click', function(e) {
+  if (state === 'TITLE') {
+    initAudio();
+    state = 'PLAYING';
+    spawnEnemy();
+  } else if (state === 'VICTORY') {
+    resetGame();
+  }
+});
+
+document.addEventListener('keydown', function(e) {
+  if (state !== 'BATTLE') return;
+  const key = e.key.toUpperCase();
+
+  let expectedKey;
+  if      (gamePhase === 'LETTERS') expectedKey = ALPHABET[currentIndex];
+  else if (gamePhase === 'NUMBERS') expectedKey = NUMBERS[numberIndex];
+  else if (gamePhase === 'WORDS')   expectedKey = WORDS[wordIndex][enemy.hits];
+
+  if (key === expectedKey) {
+    triggerAttack();
+  } else {
+    const isLetter = key.length===1 && key>='A' && key<='Z';
+    const isDigit  = key.length===1 && key>='0' && key<='9';
+    const wrongTyping = (gamePhase==='NUMBERS' ? isDigit : isLetter);
+    if (wrongTyping) {
+      knight.blocking  = true;
+      knight.blockTimer = 30;
+      sfxBwomp();
+    }
+  }
+});
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
