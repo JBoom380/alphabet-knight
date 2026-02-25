@@ -167,92 +167,112 @@ function initAudio() {
 let _musicToken = 0;
 
 function startMusic(phase) {
-  _musicToken++; // invalidate any running loop for previous phase
+  _musicToken++;
   const token = _musicToken;
 
-  // ── Shared harpsichord voice ──────────────────────────────────────────────
+  // ── Fairy harp pluck: triangle + resonant bandpass ────────────────────────
   function hNote(freq, t, dur) {
     const osc  = audioCtx.createOscillator();
     const filt = audioCtx.createBiquadFilter();
     const g    = audioCtx.createGain();
-    osc.type = 'sawtooth';
+    osc.type = 'triangle';
     osc.frequency.value = freq;
-    osc.detune.value = Math.sin(freq) * 4;
-    filt.type = 'bandpass'; filt.frequency.value = 1600; filt.Q.value = 1.2;
+    filt.type = 'bandpass'; filt.frequency.value = freq * 3.2; filt.Q.value = 3.5;
     g.gain.setValueAtTime(0.001, t);
-    g.gain.linearRampToValueAtTime(0.6, t + 0.003);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.88);
+    g.gain.linearRampToValueAtTime(0.55, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.75);
     osc.connect(filt); filt.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + dur);
   }
-  function bassNote(freq, t, dur) {
-    const bosc = audioCtx.createOscillator();
-    const bg   = audioCtx.createGain();
-    bosc.type = 'sine'; bosc.frequency.value = freq;
-    bg.gain.setValueAtTime(0.38, t);
-    bg.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.92);
-    bosc.connect(bg); bg.connect(musicGain);
-    bosc.start(t); bosc.stop(t + dur);
+
+  // ── Sparkle bell: brief high-octave sine flash ────────────────────────────
+  function sparkle(freq, t) {
+    const osc = audioCtx.createOscillator();
+    const g   = audioCtx.createGain();
+    osc.type = 'sine'; osc.frequency.value = freq * 4;
+    g.gain.setValueAtTime(0.16, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    osc.connect(g); g.connect(musicGain);
+    osc.start(t); osc.stop(t + 0.08);
   }
 
-  // ── LETTERS phase: D minor, brooding — Dm→Am→Gm→A7→Dm (circle of fifths down) ──
-  // Dm=D3/F3/A3, Am=A2/C3/E3/A3, Gm=G2/Bb2/D3/G3, A7=A2/C#3/E3/G3
+  // ── Grace note: ornamental flick 32ms before main beat ───────────────────
+  function grace(freq, t) {
+    hNote(freq * 1.125, t - 0.032, 0.030);
+  }
+
+  // ── Plucked bass: triangle, shorter decay ────────────────────────────────
+  function bassNote(freq, t, dur) {
+    const osc = audioCtx.createOscillator();
+    const g   = audioCtx.createGain();
+    osc.type = 'triangle'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.28, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.65);
+    osc.connect(g); g.connect(musicGain);
+    osc.start(t); osc.stop(t + dur);
+  }
+
+  // ── Sustained root drone (suboctave, very quiet) ──────────────────────────
+  function droneNote(freq, t, dur) {
+    const osc  = audioCtx.createOscillator();
+    const filt = audioCtx.createBiquadFilter();
+    const g    = audioCtx.createGain();
+    osc.type = 'sine'; osc.frequency.value = freq / 2;
+    filt.type = 'lowpass'; filt.frequency.value = 300;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.setValueAtTime(0.06, t + dur - 0.08);
+    g.gain.linearRampToValueAtTime(0.001, t + dur);
+    osc.connect(filt); filt.connect(g); g.connect(musicGain);
+    osc.start(t); osc.stop(t + dur);
+  }
+
+  // ── LETTERS — E Dorian: Em→A→G→Bm, 144 BPM ──────────────────────────────
+  // Raised 6th (C#/277 Hz) gives magical, hopeful minor colour
   const LETTERS_PAT = [
-    // Dm arpeggio up+down
-    294,349,440,587, 440,349,294,220,
-    // Am — fifth below Dm (circle-of-fifths step)
-    220,262,330,440, 330,262,220,165,
-    // Gm — fifth below Am
-    196,233,294,392, 294,233,196,147,
-    // A7 cadence back to Dm
-    220,277,330,415, 294,349,440,587
+    330,415,494,659,  587,494,415,330,  // Em arpeggio (E4 G#4 B4 E5) — G# is Dorian 3rd
+    220,277,330,440,  494,440,330,277,  // A major (the raised 6th chord)
+    196,247,294,392,  440,392,294,247,  // G major
+    247,311,370,494,  659,494,370,330,  // Bm→Em cadence
   ];
-  const LETTERS_BASS = [147,110,98,110]; // D2 A2 G2 A2
+  const LETTERS_BASS = [82,110,98,123]; // E2 A2 G2 B2
 
-  // ── WORDS phase: F major, bright and playful — F→C→G→Am (ascending fifths) ──
-  // F=F3/A3/C4, C=C3/E3/G3/C4, G=G3/B3/D4/G4, Am=A3/C4/E4/A4
+  // ── WORDS — A Lydian (♯4 = D# ≈ 311 Hz): A→B→C#m→E, 158 BPM ─────────────
+  // Lydian ♯4 creates an airy, floating, fairy-tale brightness
   const WORDS_PAT = [
-    // F major arpeggio
-    349,440,523,698, 523,440,349,262,
-    // C major — fifth above F
-    262,330,392,523, 392,330,262,196,
-    // G major — fifth above C
-    392,494,587,784, 587,494,392,294,
-    // Am — relative minor cadence back
-    220,262,330,440, 330,262,220,175
+    220,277,311,440,  494,440,311,277,  // A Lydian (D#/311 is the ♯4 colour note)
+    247,311,370,494,  622,494,370,311,  // B major
+    277,330,415,554,  659,554,415,330,  // C#m
+    165,208,247,330,  440,330,247,220,  // E→A cadence
   ];
-  const WORDS_BASS = [175,131,196,110]; // F2 C2 G2 A2
+  const WORDS_BASS = [110,123,138,82]; // A2 B2 C#2 E2
 
-  // ── NUMBERS phase: A minor, urgent/tense — Am→Dm→E7→Am (tight minor cadence, faster) ──
-  // Am=A3/C4/E4, Dm=D4/F4/A4, E7=E3/G#3/B3/D4
+  // ── NUMBERS — D Phrygian dominant (♭2=Eb≈311 Hz): Dm→Gm→A7→Dm, 172 BPM ──
+  // Phrygian dominant has ancient, exotic, incantatory mystery
   const NUMBERS_PAT = [
-    // Am — quick 16ths, denser
-    220,262,330,440, 523,440,330,262,
-    // Dm — step down a fifth
-    294,349,440,587, 440,349,294,220,
-    // E7 — dominant creates tension
-    165,208,248,294, 330,294,248,208,
-    // Am resolution + ascent
-    220,262,330,440, 523,587,659,880
+    294,311,392,440,  494,440,392,311,  // D Phryg run (Eb/311 is the exotic ♭2)
+    196,233,294,392,  294,233,196,147,  // Gm
+    220,277,330,440,  392,330,277,220,  // A7
+    147,185,220,294,  370,440,587,440,  // Dm resolution + ascent
   ];
-  const NUMBERS_BASS = [110,147,82,110]; // A2 D2 E2 A2
+  const NUMBERS_BASS = [73,98,110,73]; // D2 G2 A2 D2
 
   const phaseMap = {
-    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/108/4  },
-    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/116/4  },
-    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/126/4  },
+    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/144/4, drone: 82  },
+    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/158/4, drone: 110 },
+    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/172/4, drone: 73  },
   };
   const cfg = phaseMap[phase] || phaseMap.LETTERS;
-  const { pat, bass, S } = cfg;
+  const { pat, bass, S, drone } = cfg;
   const loopLen = pat.length * S;
 
   function scheduleLoop(startT) {
-    if (_musicToken !== token) return; // phase changed, stop this loop
+    if (_musicToken !== token) return;
+    droneNote(drone, startT, loopLen);
     pat.forEach((freq, i) => {
-      hNote(freq, startT + i * S, S);
-      if (i % 4 === 0) {
-        bassNote(bass[Math.floor(i/4) % bass.length], startT + i * S, S * 4);
-      }
+      if (i % 4 === 0) grace(freq, startT + i * S);
+      hNote(freq, startT + i * S, S * 0.88);
+      if (i % 4 === 0 || i % 4 === 2) sparkle(freq, startT + i * S);
+      if (i % 4 === 0) bassNote(bass[Math.floor(i/4) % bass.length], startT + i * S, S * 4);
     });
     const nextStart = startT + loopLen;
     setTimeout(() => scheduleLoop(nextStart),
@@ -643,7 +663,7 @@ function drawKnight(ctx) {
   // Sword arm + sword
   let swordAngle = -15;
   if (knight.attacking) {
-    const prog = 1 - knight.attackTimer/36;
+    const prog = 1 - knight.attackTimer/20;
     swordAngle = prog < 0.5 ? -80 + prog*2*140 : 60 - (prog*2-1)*75;
   }
   ctx.save(); ctx.translate(20,-30); ctx.rotate(swordAngle*Math.PI/180);
@@ -1785,7 +1805,7 @@ function update() {
 
   if (state === 'PLAYING') {
     knight.walking = true;
-    bgOffset += 1.5;
+    bgOffset += 2.5;
 
     // Footstep SFX
     stepTimer++;
@@ -1793,7 +1813,7 @@ function update() {
 
     // Enemy walks left
     if (enemy.active && enemy.x > 490) {
-      enemy.x -= 1.5;
+      enemy.x -= 2.8;
     } else if (enemy.active && enemy.x <= 490) {
       // Enter battle
       enemy.x = 490;
@@ -1880,7 +1900,7 @@ function spawnEnemy() {
 function triggerAttack() {
   if (knight.attacking) return;
   knight.attacking = true;
-  knight.attackTimer = 36;
+  knight.attackTimer = 20;
   sfxSword();
 }
 
@@ -1903,7 +1923,7 @@ function registerHit() {
 
 function triggerDefeat() {
   enemy.defeated = true;
-  enemy.defeatTimer = 42;
+  enemy.defeatTimer = 26;
   state = 'LETTER_DEFEATED';
   sfxChime();
   spawnParticles(enemy.x, enemy.y, currentColor());
@@ -1997,6 +2017,16 @@ canvas.addEventListener('click', function(e) {
   }
 });
 
+function speakLetter(key) {
+  if (!window.speechSynthesis) return;
+  const nameMap = {'0':'zero','1':'one','2':'two','3':'three','4':'four',
+                   '5':'five','6':'six','7':'seven','8':'eight','9':'nine'};
+  const utt = new SpeechSynthesisUtterance(nameMap[key] || key);
+  utt.rate = 1.1; utt.pitch = 1.4; utt.volume = 1;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utt);
+}
+
 document.addEventListener('keydown', function(e) {
   if (state !== 'BATTLE') return;
   const key = e.key.toUpperCase();
@@ -2007,6 +2037,7 @@ document.addEventListener('keydown', function(e) {
   else if (gamePhase === 'WORDS')   expectedKey = WORDS[wordIndex][enemy.hits];
 
   if (key === expectedKey) {
+    speakLetter(key);
     triggerAttack();
   } else {
     const isLetter = key.length===1 && key>='A' && key<='Z';
