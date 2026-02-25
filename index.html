@@ -115,7 +115,7 @@ function drawPaperOverlay(cx) {
 }
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
-let state = 'TITLE'; // TITLE | PLAYING | BATTLE | LETTER_DEFEATED | VICTORY
+let state = 'TITLE'; // TITLE | MENU | PLAYING | BATTLE | LETTER_DEFEATED | VICTORY
 let currentIndex = 0;
 let bgOffset = 0;
 let frameCount = 0;
@@ -139,9 +139,20 @@ let stars = [];
 let blinkTimer = 0;
 
 // Phase tracking
-let gamePhase = 'LETTERS'; // 'LETTERS' | 'WORDS' | 'NUMBERS'
+let gamePhase = 'LETTERS'; // 'LETTERS' | 'WORDS' | 'NUMBERS' | 'MATH'
 let numberIndex = 0;
 let wordIndex = 0;
+let mathIndex    = 0;
+let mathProblems = [];
+let mouseX = 0, mouseY = 0;
+
+function generateMathProblems() {
+  const probs = [];
+  for(let a=1;a<=5;a++) for(let b=1;b<=5;b++) if(a+b<=9) probs.push({a,op:'+',b,ans:a+b});
+  for(let a=2;a<=9;a++) for(let b=1;b<a;b++) probs.push({a,op:'-',b,ans:a-b});
+  for(let i=probs.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[probs[i],probs[j]]=[probs[j],probs[i]];}
+  return probs.slice(0,15);
+}
 
 // ─── AUDIO ───────────────────────────────────────────────────────────────────
 // (filled in step 2)
@@ -160,7 +171,6 @@ function initAudio() {
   const comp = audioCtx.createDynamicsCompressor();
   musicGain.connect(comp);
   comp.connect(audioCtx.destination);
-  startMusic('LETTERS');
 }
 
 // Music loop cancellation token
@@ -170,27 +180,27 @@ function startMusic(phase) {
   _musicToken++;
   const token = _musicToken;
 
-  // ── Fairy harp pluck: triangle + resonant bandpass ────────────────────────
+  // ── Soft flute/music-box: triangle + mellow lowpass ──────────────────────
   function hNote(freq, t, dur) {
     const osc  = audioCtx.createOscillator();
     const filt = audioCtx.createBiquadFilter();
     const g    = audioCtx.createGain();
     osc.type = 'triangle';
     osc.frequency.value = freq;
-    filt.type = 'bandpass'; filt.frequency.value = freq * 3.2; filt.Q.value = 3.5;
+    filt.type = 'lowpass'; filt.frequency.value = 800; filt.Q.value = 0.8;
     g.gain.setValueAtTime(0.001, t);
-    g.gain.linearRampToValueAtTime(0.55, t + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.75);
+    g.gain.linearRampToValueAtTime(0.55, t + 0.018);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 1.1);
     osc.connect(filt); filt.connect(g); g.connect(musicGain);
-    osc.start(t); osc.stop(t + dur);
+    osc.start(t); osc.stop(t + dur * 1.15);
   }
 
-  // ── Sparkle bell: brief high-octave sine flash ────────────────────────────
+  // ── Subtle sparkle: beat 1 only, half volume ──────────────────────────────
   function sparkle(freq, t) {
     const osc = audioCtx.createOscillator();
     const g   = audioCtx.createGain();
     osc.type = 'sine'; osc.frequency.value = freq * 4;
-    g.gain.setValueAtTime(0.16, t);
+    g.gain.setValueAtTime(0.08, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
     osc.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + 0.08);
@@ -201,65 +211,72 @@ function startMusic(phase) {
     hNote(freq * 1.125, t - 0.032, 0.030);
   }
 
-  // ── Plucked bass: triangle, shorter decay ────────────────────────────────
+  // ── Gentle bass pulse: softer decay ──────────────────────────────────────
   function bassNote(freq, t, dur) {
     const osc = audioCtx.createOscillator();
     const g   = audioCtx.createGain();
     osc.type = 'triangle'; osc.frequency.value = freq;
-    g.gain.setValueAtTime(0.28, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.65);
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.85);
     osc.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + dur);
   }
 
-  // ── Sustained root drone (suboctave, very quiet) ──────────────────────────
+  // ── Warm drone pad (suboctave) ─────────────────────────────────────────────
   function droneNote(freq, t, dur) {
     const osc  = audioCtx.createOscillator();
     const filt = audioCtx.createBiquadFilter();
     const g    = audioCtx.createGain();
     osc.type = 'sine'; osc.frequency.value = freq / 2;
-    filt.type = 'lowpass'; filt.frequency.value = 300;
-    g.gain.setValueAtTime(0.06, t);
-    g.gain.setValueAtTime(0.06, t + dur - 0.08);
+    filt.type = 'lowpass'; filt.frequency.value = 400;
+    g.gain.setValueAtTime(0.10, t);
+    g.gain.setValueAtTime(0.10, t + dur - 0.08);
     g.gain.linearRampToValueAtTime(0.001, t + dur);
     osc.connect(filt); filt.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + dur);
   }
 
-  // ── LETTERS — E Dorian: Em→A→G→Bm, 144 BPM ──────────────────────────────
-  // Raised 6th (C#/277 Hz) gives magical, hopeful minor colour
+  // ── LETTERS — C major pentatonic, 76 BPM ─────────────────────────────────
   const LETTERS_PAT = [
-    330,415,494,659,  587,494,415,330,  // Em arpeggio (E4 G#4 B4 E5) — G# is Dorian 3rd
-    220,277,330,440,  494,440,330,277,  // A major (the raised 6th chord)
-    196,247,294,392,  440,392,294,247,  // G major
-    247,311,370,494,  659,494,370,330,  // Bm→Em cadence
+    262,330,392,440,  523,440,392,330,
+    294,330,392,440,  392,330,294,262,
+    220,262,330,392,  440,392,330,262,
+    262,294,330,392,  440,523,440,392,
   ];
-  const LETTERS_BASS = [82,110,98,123]; // E2 A2 G2 B2
+  const LETTERS_BASS = [131,131,110,131]; // C3 C3 A2 C3
 
-  // ── WORDS — A Lydian (♯4 = D# ≈ 311 Hz): A→B→C#m→E, 158 BPM ─────────────
-  // Lydian ♯4 creates an airy, floating, fairy-tale brightness
+  // ── WORDS — G major, 82 BPM ───────────────────────────────────────────────
   const WORDS_PAT = [
-    220,277,311,440,  494,440,311,277,  // A Lydian (D#/311 is the ♯4 colour note)
-    247,311,370,494,  622,494,370,311,  // B major
-    277,330,415,554,  659,554,415,330,  // C#m
-    165,208,247,330,  440,330,247,220,  // E→A cadence
+    196,247,294,392,  440,392,294,247,
+    220,294,330,440,  392,330,294,220,
+    196,247,294,330,  392,330,294,247,
+    247,294,330,392,  440,392,330,196,
   ];
-  const WORDS_BASS = [110,123,138,82]; // A2 B2 C#2 E2
+  const WORDS_BASS = [98,110,98,98]; // G2 A2 G2 G2
 
-  // ── NUMBERS — D Phrygian dominant (♭2=Eb≈311 Hz): Dm→Gm→A7→Dm, 172 BPM ──
-  // Phrygian dominant has ancient, exotic, incantatory mystery
+  // ── NUMBERS — F major pentatonic, 86 BPM ─────────────────────────────────
   const NUMBERS_PAT = [
-    294,311,392,440,  494,440,392,311,  // D Phryg run (Eb/311 is the exotic ♭2)
-    196,233,294,392,  294,233,196,147,  // Gm
-    220,277,330,440,  392,330,277,220,  // A7
-    147,185,220,294,  370,440,587,440,  // Dm resolution + ascent
+    175,220,262,349,  392,349,262,220,
+    196,262,294,392,  349,294,262,196,
+    175,220,262,330,  349,330,262,220,
+    220,262,349,392,  440,392,349,262,
   ];
-  const NUMBERS_BASS = [73,98,110,73]; // D2 G2 A2 D2
+  const NUMBERS_BASS = [87,87,110,87]; // F2 F2 A2 F2
+
+  // ── MATH — D major, 72 BPM ────────────────────────────────────────────────
+  const MATH_PAT = [
+    294,370,440,587,  494,440,370,294,
+    330,440,494,587,  659,587,494,330,
+    247,294,370,440,  494,440,370,247,
+    294,370,440,494,  587,494,440,294,
+  ];
+  const MATH_BASS = [147,147,123,147]; // D2 D2 B2 D2
 
   const phaseMap = {
-    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/144/4, drone: 82  },
-    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/158/4, drone: 110 },
-    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/172/4, drone: 73  },
+    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/76/4,  drone: 131 },
+    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/82/4,  drone: 98  },
+    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/86/4,  drone: 87  },
+    MATH:    { pat: MATH_PAT,    bass: MATH_BASS,    S: 60/72/4,  drone: 147 },
   };
   const cfg = phaseMap[phase] || phaseMap.LETTERS;
   const { pat, bass, S, drone } = cfg;
@@ -271,7 +288,7 @@ function startMusic(phase) {
     pat.forEach((freq, i) => {
       if (i % 4 === 0) grace(freq, startT + i * S);
       hNote(freq, startT + i * S, S * 0.88);
-      if (i % 4 === 0 || i % 4 === 2) sparkle(freq, startT + i * S);
+      if (i % 4 === 0) sparkle(freq, startT + i * S);
       if (i % 4 === 0) bassNote(bass[Math.floor(i/4) % bass.length], startT + i * S, S * 4);
     });
     const nextStart = startT + loopLen;
@@ -1481,6 +1498,114 @@ function drawWordEnemy(ctx) {
   }
 }
 
+function drawMathEnemy(ctx) {
+  if (!enemy.active) return;
+  const t = frameCount/60;
+  const prob = mathProblems[mathIndex] || {a:1,op:'+',b:1,ans:2};
+  const ex = enemy.x, ey = enemy.y;
+  const flash = enemy.hitFlash > 0;
+
+  ctx.save();
+  if (enemy.defeated) {
+    ctx.translate(ex, ey);
+    ctx.rotate(enemy.defeatAngle);
+    ctx.scale(enemy.defeatScale, enemy.defeatScale);
+  } else {
+    ctx.translate(ex, ey + Math.sin(t*3)*6);
+  }
+  ctx.lineCap='round'; ctx.lineJoin='round';
+
+  // Aura
+  if (!enemy.defeated) {
+    const aura=ctx.createRadialGradient(0,0,30,0,0,100);
+    aura.addColorStop(0,'#f7258544'); aura.addColorStop(1,'#f7258500');
+    ctx.fillStyle=aura; ctx.beginPath(); ctx.arc(0,0,100,0,Math.PI*2); ctx.fill();
+  }
+
+  const bodyCol = flash ? '#ffffff' : '#4caf50';
+  const darkGreen = flash ? '#dddddd' : '#2e7d32';
+
+  // Legs (boots)
+  ctx.fillStyle=flash?'#fff':'#3e2723';
+  ctx.beginPath(); ctx.ellipse(-18,48,14,10,0.2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(18,48,14,10,-0.2,0,Math.PI*2); ctx.fill();
+
+  // Arms (reaching forward to hold chalkboard)
+  ctx.fillStyle=bodyCol;
+  ctx.beginPath(); ctx.roundRect(-62,-20,18,22,6); ctx.fill();
+  ctx.strokeStyle=darkGreen; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(-62,-20,18,22,6); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(44,-20,18,22,6); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(44,-20,18,22,6); ctx.stroke();
+
+  // Body
+  ctx.fillStyle=bodyCol;
+  ctx.beginPath(); ctx.ellipse(0,20,32,38,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=darkGreen; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.ellipse(0,20,32,38,0,0,Math.PI*2); ctx.stroke();
+
+  // Head
+  ctx.fillStyle=bodyCol;
+  ctx.beginPath(); ctx.ellipse(0,-28,38,42,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=darkGreen; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.ellipse(0,-28,38,42,0,0,Math.PI*2); ctx.stroke();
+
+  // Pointed ears
+  ctx.fillStyle=bodyCol;
+  ctx.beginPath(); ctx.moveTo(-34,-32); ctx.lineTo(-44,-58); ctx.lineTo(-22,-38); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle=darkGreen; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(34,-32); ctx.lineTo(44,-58); ctx.lineTo(22,-38); ctx.closePath(); ctx.fill();
+  ctx.stroke();
+
+  // Eyes (wide & mischievous, yellow irises)
+  drawEyes(ctx, -14,-30, 14,-30, 10, '#ffd700');
+
+  // Mouth — wide toothy grin
+  ctx.strokeStyle=darkGreen; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,-10,18,0.2,Math.PI-0.2); ctx.stroke();
+  for(let tx=-12;tx<=12;tx+=8){
+    ctx.beginPath(); ctx.moveTo(tx,-10); ctx.lineTo(tx,-3); ctx.stroke();
+  }
+
+  // Chalkboard
+  const bfl = flash ? '#ffffff' : '#37474f';
+  ctx.fillStyle=bfl;
+  ctx.beginPath(); ctx.roundRect(-52,-70,104,68,6); ctx.fill();
+  ctx.strokeStyle='#5a3010'; ctx.lineWidth=6;
+  ctx.beginPath(); ctx.roundRect(-52,-70,104,68,6); ctx.stroke();
+
+  // Problem text on board
+  ctx.fillStyle=flash?'#aaa':'#ffffff';
+  ctx.font='bold 30px Georgia,serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(`${prob.a} ${prob.op} ${prob.b} = ?`, 0, -36);
+
+  // Chalk dust dots
+  ctx.fillStyle=flash?'#ccc':'rgba(255,255,255,0.7)';
+  const dustSeeds=[[38,-8],[44,-14],[32,-4],[48,-18],[28,-10],[42,-6]];
+  dustSeeds.forEach(([dx,dy])=>{
+    ctx.beginPath(); ctx.arc(dx,dy,2,0,Math.PI*2); ctx.fill();
+  });
+
+  // Hearts above goblin
+  if (!enemy.defeated) {
+    for(let h=0;h<3;h++){
+      ctx.font='20px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=h<(3-enemy.hits)?'#e63946':'#444';
+      ctx.fillText('♥',-22+h*22,-132);
+    }
+  }
+
+  ctx.restore();
+
+  // Name label
+  if (!enemy.defeated) {
+    const bounce2=Math.sin(frameCount/60*3)*6;
+    ctx.fillStyle='#3d1a00'; ctx.font='italic 13px Georgia,serif'; ctx.textAlign='center';
+    ctx.fillText('The Calculating Goblin!', ex, ey+bounce2+70);
+  }
+}
+
 function drawParticles(ctx) {
   particles.forEach(p=>{
     ctx.save();
@@ -1579,6 +1704,34 @@ function drawHUD(ctx) {
     });
     ctx.fillStyle='#3d1a00'; ctx.font='bold 14px Georgia'; ctx.textAlign='left'; ctx.textBaseline='bottom';
     ctx.fillText(`Number ${numberIndex+1} of 10`,14,H-8);
+
+  } else if (gamePhase === 'MATH') {
+    const chipW=(W-40)/15;
+    for(let i=0;i<15;i++) {
+      const cx2=20+i*chipW+chipW/2, cy=8+stripH/2, r=13;
+      const label=String(i+1);
+      if(i<mathIndex){
+        ctx.fillStyle='#2ecc71';
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='bold 12px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(label,cx2,cy);
+      } else if(i===mathIndex){
+        const pulse=1+Math.sin(frameCount/8)*0.15;
+        ctx.fillStyle='#f72585';
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#c8960c'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(cx2,cy,r*pulse,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#fff'; ctx.font='bold 12px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(label,cx2,cy);
+      } else {
+        ctx.strokeStyle='#aaa'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(cx2,cy,r,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='#999'; ctx.font='11px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(label,cx2,cy);
+      }
+    }
+    ctx.fillStyle='#3d1a00'; ctx.font='bold 14px Georgia'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText(`Problem ${mathIndex+1} of 15`,14,H-8);
   }
 
   // Battle prompt
@@ -1606,6 +1759,20 @@ function drawHUD(ctx) {
         ctx.fillStyle=textCol;
         ctx.font='bold 38px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillText(word[i],lx+boxW/2,by+20+boxH/2);
+      }
+    } else if (gamePhase === 'MATH') {
+      const prob = mathProblems[mathIndex] || {a:1,op:'+',b:1,ans:2};
+      const eq = `${prob.a} ${prob.op} ${prob.b} = ?`;
+      const blink=Math.floor(frameCount/18)%2===0;
+      ctx.fillStyle='#fffde7ee';
+      ctx.beginPath(); ctx.roundRect(W/2-160,H*0.6,320,100,16); ctx.fill();
+      ctx.strokeStyle='#f72585'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.roundRect(W/2-160,H*0.6,320,100,16); ctx.stroke();
+      ctx.fillStyle='#1a0a00'; ctx.font='bold 48px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(eq, W/2, H*0.6+42);
+      if(blink){
+        ctx.fillStyle='#c8960c'; ctx.font='bold 18px Georgia'; ctx.textBaseline='middle';
+        ctx.fillText(`Press the answer digit! (${enemy.hits}/3 hits)`, W/2, H*0.6+82);
       }
     } else {
       // Letters or Numbers: key blink prompt
@@ -1706,9 +1873,72 @@ function drawTitle(ctx) {
     ctx.fillStyle='#ffd700';
     ctx.font='bold 22px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.shadowColor='#8B6914'; ctx.shadowBlur=8;
-    ctx.fillText('Click anywhere to begin your quest!',W/2,H-38);
+    ctx.fillText('Click to choose your quest!',W/2,H-38);
     ctx.shadowBlur=0;
   }
+}
+
+let menuBtnRects = [];
+
+function drawMenu(ctx) {
+  // Amber vignette (same as title)
+  const vig = ctx.createRadialGradient(W/2,H/2,80,W/2,H/2,Math.max(W,H)*0.75);
+  vig.addColorStop(0,'transparent'); vig.addColorStop(1,'#40200880');
+  ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
+
+  // Header banner
+  ctx.fillStyle='#fffde7';
+  ctx.beginPath(); ctx.roundRect(80,28,W-160,70,16); ctx.fill();
+  ctx.strokeStyle='#8B6914'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.roundRect(80,28,W-160,70,16); ctx.stroke();
+  ctx.fillStyle='#8B4513';
+  ctx.font='bold 32px Georgia,serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=3;
+  ctx.strokeText('Choose Your Quest!',W/2,63);
+  ctx.fillText('Choose Your Quest!',W/2,63);
+
+  // 2×2 grid of phase buttons
+  const btnW=190, btnH=105, gap=18;
+  const gridW=btnW*2+gap, gridH=btnH*2+gap;
+  const gx=(W-gridW)/2, gy=120;
+
+  const phases=[
+    {phase:'LETTERS', icon:'A',    title:'Letters A–Z', desc:'Type the alphabet!',   color:'#e63946'},
+    {phase:'WORDS',   icon:'CAT',  title:'Words: CAT…', desc:'Spell the words!',     color:'#f4a261'},
+    {phase:'NUMBERS', icon:'7',    title:'Numbers: 0–9',desc:'Type the numbers!',    color:'#4cc9f0'},
+    {phase:'MATH',    icon:'3+?',  title:'Math: 1+1=?', desc:'Solve the problems!',  color:'#f72585'},
+  ];
+
+  menuBtnRects = [];
+  phases.forEach((p,i)=>{
+    const col=i%2, row=Math.floor(i/2);
+    const bx=gx+col*(btnW+gap), by=gy+row*(btnH+gap);
+    menuBtnRects.push({x:bx,y:by,w:btnW,h:btnH,phase:p.phase});
+
+    const hover=mouseX>=bx&&mouseX<=bx+btnW&&mouseY>=by&&mouseY<=by+btnH;
+    ctx.fillStyle=hover?'#fff9d0':'#fffde7';
+    ctx.beginPath(); ctx.roundRect(bx,by,btnW,btnH,14); ctx.fill();
+    ctx.strokeStyle=p.color; ctx.lineWidth=hover?4:2.5;
+    ctx.beginPath(); ctx.roundRect(bx,by,btnW,btnH,14); ctx.stroke();
+
+    // Coloured icon
+    ctx.fillStyle=p.color;
+    ctx.font='bold 28px Georgia,serif';
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText(p.icon, bx+12, by+10);
+
+    // Phase title
+    ctx.fillStyle='#3d1a00';
+    ctx.font='bold 18px Georgia,serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(p.title, bx+btnW/2, by+btnH*0.54);
+
+    // Description
+    ctx.fillStyle='#7a5030';
+    ctx.font='italic 13px Georgia,serif';
+    ctx.fillText(p.desc, bx+btnW/2, by+btnH*0.78);
+  });
 }
 
 function drawVictory(ctx) {
@@ -1738,7 +1968,7 @@ function drawVictory(ctx) {
   ctx.strokeText('THE END',W/2,100);
   ctx.fillText('THE END',W/2,100);
   ctx.font='bold 24px Georgia';
-  ctx.fillText('You mastered Letters, Words & Numbers!',W/2,148);
+  ctx.fillText('You mastered Letters, Words, Numbers & Math!',W/2,148);
 
   // Letter grid
   const cols=13, chipSize=28, gapX=32, startX=(W-(cols*gapX))/2+16;
@@ -1782,7 +2012,7 @@ function update() {
   blinkTimer++;
   frameCount++;
 
-  if (state === 'TITLE' || state === 'VICTORY') {
+  if (state === 'TITLE' || state === 'MENU' || state === 'VICTORY') {
     // Animate victory stars
     if (state === 'VICTORY') {
       stars.forEach(s=>{ s.y += s.speed; if(s.y>H+20) s.y=-20; });
@@ -1838,7 +2068,7 @@ function update() {
   } else if (state === 'LETTER_DEFEATED') {
     enemy.defeatTimer--;
     enemy.defeatAngle += 0.18;
-    enemy.defeatScale = Math.max(0, enemy.defeatTimer/42);
+    enemy.defeatScale = Math.max(0, enemy.defeatTimer/26);
 
     if (enemy.defeatTimer <= 0) {
       enemy.active = false;
@@ -1873,13 +2103,16 @@ function update() {
       } else if (gamePhase === 'NUMBERS') {
         numberIndex++;
         if (numberIndex >= NUMBERS.length) {
-          state = 'VICTORY';
-          sfxVictory();
-          spawnStars();
+          gamePhase='MATH'; mathIndex=0; mathProblems=generateMathProblems();
+          if(audioCtx) startMusic('MATH'); state='PLAYING'; spawnEnemy();
         } else {
           state = 'PLAYING';
           spawnEnemy();
         }
+      } else if (gamePhase === 'MATH') {
+        mathIndex++;
+        if (mathIndex >= mathProblems.length) { state='VICTORY'; sfxVictory(); spawnStars(); }
+        else { state='PLAYING'; spawnEnemy(); }
       }
     }
   }
@@ -1907,6 +2140,7 @@ function triggerAttack() {
 function currentColor() {
   if (gamePhase === 'LETTERS') return LETTER_COLORS[currentIndex];
   if (gamePhase === 'NUMBERS') return NUMBER_COLORS[numberIndex];
+  if (gamePhase === 'MATH') return '#f72585';
   return WORD_COLORS[wordIndex];
 }
 
@@ -1957,25 +2191,21 @@ function spawnStars() {
   }
 }
 
-function resetGame() {
-  gamePhase = 'LETTERS';
-  currentIndex = 0;
-  numberIndex = 0;
-  wordIndex = 0;
-  bgOffset = 0;
-  frameCount = 0;
-  particles = [];
-  stars = [];
-  knight.walking = false;
-  knight.attacking = false;
-  knight.blocking = false;
-  knight.attackTimer = 0;
-  knight.blockTimer = 0;
-  enemy.active = false;
-  enemy.defeated = false;
-  if (audioCtx) startMusic('LETTERS');
+function startPhase(phase) {
+  gamePhase = phase;
+  currentIndex = 0; wordIndex = 0; numberIndex = 0;
+  mathIndex = 0; mathProblems = generateMathProblems();
+  bgOffset = 0; frameCount = 0; particles = []; stars = [];
+  knight.walking=false; knight.attacking=false; knight.blocking=false;
+  knight.attackTimer=0; knight.blockTimer=0;
+  enemy.active=false; enemy.defeated=false;
+  if (audioCtx) startMusic(phase);
   state = 'PLAYING';
   spawnEnemy();
+}
+
+function resetGame() {
+  state = 'MENU';
 }
 
 // ─── MAIN LOOP ────────────────────────────────────────────────────────────────
@@ -1989,6 +2219,9 @@ function loop() {
   if (state === 'TITLE') {
     drawBackground(ctx);
     drawTitle(ctx);
+  } else if (state === 'MENU') {
+    drawBackground(ctx);
+    drawMenu(ctx);
   } else if (state === 'VICTORY') {
     drawBackground(ctx);
     drawVictory(ctx);
@@ -1997,8 +2230,9 @@ function loop() {
     drawParticles(ctx);
     drawKnight(ctx);
     if (enemy.active) {
-      if (gamePhase === 'WORDS') drawWordEnemy(ctx);
-      else drawEnemy(ctx);
+      if      (gamePhase === 'WORDS') drawWordEnemy(ctx);
+      else if (gamePhase === 'MATH')  drawMathEnemy(ctx);
+      else                            drawEnemy(ctx);
     }
     drawHUD(ctx);
   }
@@ -2007,13 +2241,20 @@ function loop() {
 }
 
 // ─── EVENT LISTENERS ─────────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', function(e) {
+  const r=canvas.getBoundingClientRect(); mouseX=e.clientX-r.left; mouseY=e.clientY-r.top;
+});
+
 canvas.addEventListener('click', function(e) {
+  const r=canvas.getBoundingClientRect(); const cx=e.clientX-r.left, cy=e.clientY-r.top;
   if (state === 'TITLE') {
-    initAudio();
-    state = 'PLAYING';
-    spawnEnemy();
+    state = 'MENU';
+  } else if (state === 'MENU') {
+    menuBtnRects.forEach(btn=>{
+      if(cx>=btn.x&&cx<=btn.x+btn.w&&cy>=btn.y&&cy<=btn.y+btn.h){ initAudio(); startPhase(btn.phase); }
+    });
   } else if (state === 'VICTORY') {
-    resetGame();
+    state = 'MENU';
   }
 });
 
@@ -2035,6 +2276,7 @@ document.addEventListener('keydown', function(e) {
   if      (gamePhase === 'LETTERS') expectedKey = ALPHABET[currentIndex];
   else if (gamePhase === 'NUMBERS') expectedKey = NUMBERS[numberIndex];
   else if (gamePhase === 'WORDS')   expectedKey = WORDS[wordIndex][enemy.hits];
+  else if (gamePhase === 'MATH')    expectedKey = String(mathProblems[mathIndex]?.ans);
 
   if (key === expectedKey) {
     speakLetter(key);
@@ -2042,7 +2284,7 @@ document.addEventListener('keydown', function(e) {
   } else {
     const isLetter = key.length===1 && key>='A' && key<='Z';
     const isDigit  = key.length===1 && key>='0' && key<='9';
-    const wrongTyping = (gamePhase==='NUMBERS' ? isDigit : isLetter);
+    const wrongTyping = (gamePhase==='NUMBERS'||gamePhase==='MATH') ? isDigit : isLetter;
     if (wrongTyping) {
       knight.blocking  = true;
       knight.blockTimer = 30;
