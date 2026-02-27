@@ -180,8 +180,9 @@ function startMusic(phase) {
   _musicToken++;
   const token = _musicToken;
 
+  // Note functions accept a dest node so each loop routes through its own bus.
   // ── Soft flute/music-box: triangle + mellow lowpass ──────────────────────
-  function hNote(freq, t, dur) {
+  function hNote(freq, t, dur, dest) {
     const osc  = audioCtx.createOscillator();
     const filt = audioCtx.createBiquadFilter();
     const g    = audioCtx.createGain();
@@ -191,42 +192,39 @@ function startMusic(phase) {
     g.gain.setValueAtTime(0.001, t);
     g.gain.linearRampToValueAtTime(0.55, t + 0.018);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur * 1.1);
-    osc.connect(filt); filt.connect(g); g.connect(musicGain);
+    osc.connect(filt); filt.connect(g); g.connect(dest);
     osc.start(t); osc.stop(t + dur * 1.15);
-    osc.onended = () => { g.disconnect(); filt.disconnect(); osc.disconnect(); };
   }
 
   // ── Subtle sparkle: beat 1 only, half volume ──────────────────────────────
-  function sparkle(freq, t) {
+  function sparkle(freq, t, dest) {
     const osc = audioCtx.createOscillator();
     const g   = audioCtx.createGain();
     osc.type = 'sine'; osc.frequency.value = freq * 4;
     g.gain.setValueAtTime(0.08, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-    osc.connect(g); g.connect(musicGain);
+    osc.connect(g); g.connect(dest);
     osc.start(t); osc.stop(t + 0.08);
-    osc.onended = () => { g.disconnect(); osc.disconnect(); };
   }
 
   // ── Grace note: ornamental flick 32ms before main beat ───────────────────
-  function grace(freq, t) {
-    hNote(freq * 1.125, t - 0.032, 0.030);
+  function grace(freq, t, dest) {
+    hNote(freq * 1.125, t - 0.032, 0.030, dest);
   }
 
   // ── Gentle bass pulse: softer decay ──────────────────────────────────────
-  function bassNote(freq, t, dur) {
+  function bassNote(freq, t, dur, dest) {
     const osc = audioCtx.createOscillator();
     const g   = audioCtx.createGain();
     osc.type = 'triangle'; osc.frequency.value = freq;
     g.gain.setValueAtTime(0.22, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.85);
-    osc.connect(g); g.connect(musicGain);
+    osc.connect(g); g.connect(dest);
     osc.start(t); osc.stop(t + dur);
-    osc.onended = () => { g.disconnect(); osc.disconnect(); };
   }
 
   // ── Warm drone pad (suboctave) ─────────────────────────────────────────────
-  function droneNote(freq, t, dur) {
+  function droneNote(freq, t, dur, dest) {
     const osc  = audioCtx.createOscillator();
     const filt = audioCtx.createBiquadFilter();
     const g    = audioCtx.createGain();
@@ -235,9 +233,8 @@ function startMusic(phase) {
     g.gain.setValueAtTime(0.10, t);
     g.gain.setValueAtTime(0.10, t + dur - 0.08);
     g.gain.linearRampToValueAtTime(0.001, t + dur);
-    osc.connect(filt); filt.connect(g); g.connect(musicGain);
+    osc.connect(filt); filt.connect(g); g.connect(dest);
     osc.start(t); osc.stop(t + dur);
-    osc.onended = () => { g.disconnect(); filt.disconnect(); osc.disconnect(); };
   }
 
   // ── LETTERS — C major pentatonic, 76 BPM ─────────────────────────────────
@@ -288,14 +285,28 @@ function startMusic(phase) {
 
   function scheduleLoop(startT) {
     if (_musicToken !== token) return;
-    droneNote(drone, startT, loopLen);
+
+    // One GainNode per loop — all notes route through it.
+    // A single disconnect() after the loop ends releases all ~155 nodes at once
+    // instead of firing 155 individual onended callbacks at the audio thread.
+    const loopBus = audioCtx.createGain();
+    loopBus.connect(musicGain);
+
+    droneNote(drone, startT, loopLen, loopBus);
     pat.forEach((freq, i) => {
-      if (i % 4 === 0) grace(freq, startT + i * S);
-      hNote(freq, startT + i * S, S * 0.88);
-      if (i % 4 === 0) sparkle(freq, startT + i * S);
-      if (i % 4 === 0) bassNote(bass[Math.floor(i/4) % bass.length], startT + i * S, S * 4);
+      if (i % 4 === 0) grace(freq, startT + i * S, loopBus);
+      hNote(freq, startT + i * S, S * 0.88, loopBus);
+      if (i % 4 === 0) sparkle(freq, startT + i * S, loopBus);
+      if (i % 4 === 0) bassNote(bass[Math.floor(i/4) % bass.length], startT + i * S, S * 4, loopBus);
     });
+
     const nextStart = startT + loopLen;
+
+    // Disconnect the bus 0.5 s after the last note in this loop stops.
+    // By then every oscillator has already called .stop(); safe to release.
+    setTimeout(() => { try { loopBus.disconnect(); } catch(e) {} },
+               Math.max(0, (nextStart + 0.5 - audioCtx.currentTime) * 1000));
+
     setTimeout(() => scheduleLoop(nextStart),
                Math.max(0, (nextStart - audioCtx.currentTime - 0.5) * 1000));
   }
