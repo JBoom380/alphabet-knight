@@ -193,6 +193,7 @@ function startMusic(phase) {
     g.gain.exponentialRampToValueAtTime(0.001, t + dur * 1.1);
     osc.connect(filt); filt.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + dur * 1.15);
+    osc.onended = () => { g.disconnect(); filt.disconnect(); osc.disconnect(); };
   }
 
   // ── Subtle sparkle: beat 1 only, half volume ──────────────────────────────
@@ -204,6 +205,7 @@ function startMusic(phase) {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
     osc.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + 0.08);
+    osc.onended = () => { g.disconnect(); osc.disconnect(); };
   }
 
   // ── Grace note: ornamental flick 32ms before main beat ───────────────────
@@ -220,6 +222,7 @@ function startMusic(phase) {
     g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.85);
     osc.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + dur);
+    osc.onended = () => { g.disconnect(); osc.disconnect(); };
   }
 
   // ── Warm drone pad (suboctave) ─────────────────────────────────────────────
@@ -234,6 +237,7 @@ function startMusic(phase) {
     g.gain.linearRampToValueAtTime(0.001, t + dur);
     osc.connect(filt); filt.connect(g); g.connect(musicGain);
     osc.start(t); osc.stop(t + dur);
+    osc.onended = () => { g.disconnect(); filt.disconnect(); osc.disconnect(); };
   }
 
   // ── LETTERS — C major pentatonic, 76 BPM ─────────────────────────────────
