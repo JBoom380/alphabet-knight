@@ -205,11 +205,6 @@ function startMusic(phase) {
     osc.start(t); osc.stop(t + 0.04);
   }
 
-  // ── Grace note ornament (upper neighbor, 25 ms before beat) ──────────────
-  function grace(freq, t, dest) {
-    hNote(freq * (9/8), t - 0.025, 0.024, dest);
-  }
-
   // ── NES triangle-wave bass (warm, punchy) ─────────────────────────────────
   function bassNote(freq, t, dur, dest) {
     const osc = audioCtx.createOscillator();
@@ -221,42 +216,40 @@ function startMusic(phase) {
     osc.start(t); osc.stop(t + dur * 0.92);
   }
 
-  // ── LETTERS — C major "Adventure Fanfare", 120 BPM ───────────────────────
-  // Ascending octave leaps then running scale — bright, heroic
-  // C4=262 D4=294 E4=330 F4=349 G4=392 A4=440 B4=494 C5=523 E5=659 G5=784
+  // ── LETTERS — Für Elise (Beethoven, A minor, 3/4 → 48 slots, 80 BPM) ─────
+  // The iconic opening figure, then chord-tone responses, repeat
+  // E5=659 D#5=622 B4=494 D5=587 C5=523 A4=440 G#4=415 E4=330
   const LETTERS_PAT = [
-    262,392,523,392,  659,523,392,262,
-    330,440,523,440,  659,523,440,330,
-    294,392,523,659,  523,440,392,294,
-    262,294,330,392,  440,523,659,523,
+    659,622,659,622,  659,494,587,523,  440,440,440,440,  // M1: E5 D#5 E5 D#5 | E5 B4 D5 C5 | A4(held)
+    523,523,659,659,  440,440,494,494,  494,494,440,440,  // M2: C5 E5 A4 B4(held) A4
+    330,330,415,415,  494,494,523,523,  523,523,440,440,  // M3: E4 G#4 B4 C5(held) A4
+    659,622,659,622,  659,494,587,523,  440,440,440,440,  // M4: opening repeated
   ];
-  const LETTERS_BASS = [131,98,131,131]; // C3 G2 C3 C3
+  const LETTERS_BASS = [110,165,110,110]; // A2 E3 A2 A2
 
-  // ── WORDS — G major "Knightly Theme", 108 BPM ────────────────────────────
-  // Octave-leap fanfare à la Eine Kleine Nachtmusik, then stepwise run
-  // G4=392 A4=440 B4=494 D5=587 E5=659 G5=784
+  // ── WORDS — Minuet in G (Bach/Petzold, G major, 3/4 → 48 slots, 84 BPM) ─
+  // First 4 bars of the famous minuet — graceful and scholarly
+  // G4=392 C5=523 D5=587 E5=659 F#5=740 G5=784
   const WORDS_PAT = [
-    392,392,784,784,  587,587,392,392,
-    440,440,659,659,  587,494,440,392,
-    494,587,659,784,  659,587,494,440,
-    392,440,494,587,  659,494,392,392,
+    392,392,392,392,  523,523,523,523,  587,587,659,659,  // M1: G4 C5 D5 E5
+    740,740,740,740,  784,784,784,784,  587,587,587,587,  // M2: F#5 G5 D5
+    659,659,659,659,  523,523,523,523,  587,587,659,659,  // M3: E5 C5 D5 E5
+    740,740,740,740,  784,784,784,784,  784,784,784,784,  // M4: F#5 G5 G5(held)
   ];
-  const WORDS_BASS = [98,147,98,98]; // G2 D3 G2 G2
+  const WORDS_BASS = [98,147,98,131]; // G2 D3 G2 C3
 
-  // ── NUMBERS — F major "Counting Jig", 114 BPM ────────────────────────────
-  // Bouncy folk-dance feel — playful leaps and runs
-  // F4=349 G4=392 A4=440 C5=523 D5=587 E5=659
+  // ── NUMBERS — Turkish March (Mozart, Rondo alla Turca, A minor, 32 slots, 90 BPM)
+  // Famous opening riff then bright A-major bridge
+  // A4=440 G#4=415 E4=330 C5=523 B4=494 C#5=554 D5=587 E5=659
   const NUMBERS_PAT = [
-    349,392,440,523,  440,392,349,330,
-    294,330,349,392,  440,392,330,294,
-    349,440,523,659,  523,440,349,392,
-    440,523,587,523,  440,349,392,349,
+    440,415,440,415,  440,330,523,494,  440,440,440,440,  523,494,523,494,  // A-minor riff
+    440,494,554,587,  659,587,554,494,  440,440,440,440,  494,587,440,440,  // A-major bridge
   ];
-  const NUMBERS_BASS = [87,131,87,87]; // F2 C3 F2 F2
+  const NUMBERS_BASS = [110,165,110,110]; // A2 E3 A2 A2
 
-  // ── MATH — D major "Ode to Joy" (Beethoven), 96 BPM ─────────────────────
+  // ── MATH — Ode to Joy (Beethoven, D major, 32 slots, 72 BPM) ─────────────
   // Two phrases of the famous melody — triumphant and recognisable
-  // D4=294 E4=330 F#4=370 G4=392 A4=440 B4=494 C#5=554 D5=587
+  // D4=294 E4=330 F#4=370 G4=392 A4=440 B4=494
   const MATH_PAT = [
     370,370,392,440,  440,392,370,330,
     294,294,330,370,  370,330,330,330,
@@ -266,10 +259,10 @@ function startMusic(phase) {
   const MATH_BASS = [147,110,147,110]; // D3 A2 D3 A2
 
   const phaseMap = {
-    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/88/4  },
-    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/80/4  },
-    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/86/4  },
-    MATH:    { pat: MATH_PAT,    bass: MATH_BASS,    S: 60/72/4  },
+    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/80/4 },
+    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/84/4 },
+    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/90/4 },
+    MATH:    { pat: MATH_PAT,    bass: MATH_BASS,    S: 60/72/4 },
   };
   const cfg = phaseMap[phase] || phaseMap.LETTERS;
   const { pat, bass, S } = cfg;
@@ -283,7 +276,6 @@ function startMusic(phase) {
     loopBus.connect(musicGain);
 
     pat.forEach((freq, i) => {
-      if (i % 8 === 0) grace(freq, startT + i * S, loopBus);
       hNote(freq, startT + i * S, S * 0.88, loopBus);
       if (i % 8 === 0) sparkle(freq, startT + i * S, loopBus);
       if (i % 4 === 0) bassNote(bass[Math.floor(i/4) % bass.length], startT + i * S, S * 4, loopBus);
