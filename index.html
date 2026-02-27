@@ -188,10 +188,10 @@ function startMusic(phase) {
     osc.type = 'square';
     osc.frequency.value = freq;
     g.gain.setValueAtTime(0.001, t);
-    g.gain.linearRampToValueAtTime(0.26, t + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.65);
+    g.gain.linearRampToValueAtTime(0.26, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.82);
     osc.connect(g); g.connect(dest);
-    osc.start(t); osc.stop(t + dur * 0.70);
+    osc.start(t); osc.stop(t + dur * 0.86);
   }
 
   // ── Beat accent: one-octave blip on strong beats ─────────────────────────
@@ -216,9 +216,9 @@ function startMusic(phase) {
     const g   = audioCtx.createGain();
     osc.type = 'triangle'; osc.frequency.value = freq;
     g.gain.setValueAtTime(0.30, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.72);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.88);
     osc.connect(g); g.connect(dest);
-    osc.start(t); osc.stop(t + dur * 0.76);
+    osc.start(t); osc.stop(t + dur * 0.92);
   }
 
   // ── LETTERS — C major "Adventure Fanfare", 120 BPM ───────────────────────
@@ -266,10 +266,10 @@ function startMusic(phase) {
   const MATH_BASS = [147,110,147,110]; // D3 A2 D3 A2
 
   const phaseMap = {
-    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/120/4 },
-    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/108/4 },
-    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/114/4 },
-    MATH:    { pat: MATH_PAT,    bass: MATH_BASS,    S: 60/96/4  },
+    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/88/4  },
+    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/80/4  },
+    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/86/4  },
+    MATH:    { pat: MATH_PAT,    bass: MATH_BASS,    S: 60/72/4  },
   };
   const cfg = phaseMap[phase] || phaseMap.LETTERS;
   const { pat, bass, S } = cfg;
