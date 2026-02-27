@@ -180,133 +180,119 @@ function startMusic(phase) {
   _musicToken++;
   const token = _musicToken;
 
-  // Note functions accept a dest node so each loop routes through its own bus.
-  // ── Soft flute/music-box: triangle + mellow lowpass ──────────────────────
+  // ── 16-bit square-wave lead (NES pulse channel) ───────────────────────────
+  // Punchy attack, short decay — classic chiptune envelope
   function hNote(freq, t, dur, dest) {
-    const osc  = audioCtx.createOscillator();
-    const filt = audioCtx.createBiquadFilter();
-    const g    = audioCtx.createGain();
-    osc.type = 'triangle';
+    const osc = audioCtx.createOscillator();
+    const g   = audioCtx.createGain();
+    osc.type = 'square';
     osc.frequency.value = freq;
-    filt.type = 'lowpass'; filt.frequency.value = 800; filt.Q.value = 0.8;
     g.gain.setValueAtTime(0.001, t);
-    g.gain.linearRampToValueAtTime(0.55, t + 0.018);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 1.1);
-    osc.connect(filt); filt.connect(g); g.connect(dest);
-    osc.start(t); osc.stop(t + dur * 1.15);
+    g.gain.linearRampToValueAtTime(0.26, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.65);
+    osc.connect(g); g.connect(dest);
+    osc.start(t); osc.stop(t + dur * 0.70);
   }
 
-  // ── Subtle sparkle: beat 1 only, half volume ──────────────────────────────
+  // ── Beat accent: one-octave blip on strong beats ─────────────────────────
   function sparkle(freq, t, dest) {
     const osc = audioCtx.createOscillator();
     const g   = audioCtx.createGain();
-    osc.type = 'sine'; osc.frequency.value = freq * 4;
-    g.gain.setValueAtTime(0.08, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    osc.type = 'square'; osc.frequency.value = freq * 2;
+    g.gain.setValueAtTime(0.09, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
     osc.connect(g); g.connect(dest);
-    osc.start(t); osc.stop(t + 0.08);
+    osc.start(t); osc.stop(t + 0.04);
   }
 
-  // ── Grace note: ornamental flick 32ms before main beat ───────────────────
+  // ── Grace note ornament (upper neighbor, 25 ms before beat) ──────────────
   function grace(freq, t, dest) {
-    hNote(freq * 1.125, t - 0.032, 0.030, dest);
+    hNote(freq * (9/8), t - 0.025, 0.024, dest);
   }
 
-  // ── Gentle bass pulse: softer decay ──────────────────────────────────────
+  // ── NES triangle-wave bass (warm, punchy) ─────────────────────────────────
   function bassNote(freq, t, dur, dest) {
     const osc = audioCtx.createOscillator();
     const g   = audioCtx.createGain();
     osc.type = 'triangle'; osc.frequency.value = freq;
-    g.gain.setValueAtTime(0.22, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.85);
+    g.gain.setValueAtTime(0.30, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.72);
     osc.connect(g); g.connect(dest);
-    osc.start(t); osc.stop(t + dur);
+    osc.start(t); osc.stop(t + dur * 0.76);
   }
 
-  // ── Warm drone pad (suboctave) ─────────────────────────────────────────────
-  function droneNote(freq, t, dur, dest) {
-    const osc  = audioCtx.createOscillator();
-    const filt = audioCtx.createBiquadFilter();
-    const g    = audioCtx.createGain();
-    osc.type = 'sine'; osc.frequency.value = freq / 2;
-    filt.type = 'lowpass'; filt.frequency.value = 400;
-    g.gain.setValueAtTime(0.10, t);
-    g.gain.setValueAtTime(0.10, t + dur - 0.08);
-    g.gain.linearRampToValueAtTime(0.001, t + dur);
-    osc.connect(filt); filt.connect(g); g.connect(dest);
-    osc.start(t); osc.stop(t + dur);
-  }
-
-  // ── LETTERS — C major pentatonic, 76 BPM ─────────────────────────────────
+  // ── LETTERS — C major "Adventure Fanfare", 120 BPM ───────────────────────
+  // Ascending octave leaps then running scale — bright, heroic
+  // C4=262 D4=294 E4=330 F4=349 G4=392 A4=440 B4=494 C5=523 E5=659 G5=784
   const LETTERS_PAT = [
-    262,330,392,440,  523,440,392,330,
-    294,330,392,440,  392,330,294,262,
-    220,262,330,392,  440,392,330,262,
-    262,294,330,392,  440,523,440,392,
+    262,392,523,392,  659,523,392,262,
+    330,440,523,440,  659,523,440,330,
+    294,392,523,659,  523,440,392,294,
+    262,294,330,392,  440,523,659,523,
   ];
-  const LETTERS_BASS = [131,131,110,131]; // C3 C3 A2 C3
+  const LETTERS_BASS = [131,98,131,131]; // C3 G2 C3 C3
 
-  // ── WORDS — G major, 82 BPM ───────────────────────────────────────────────
+  // ── WORDS — G major "Knightly Theme", 108 BPM ────────────────────────────
+  // Octave-leap fanfare à la Eine Kleine Nachtmusik, then stepwise run
+  // G4=392 A4=440 B4=494 D5=587 E5=659 G5=784
   const WORDS_PAT = [
-    196,247,294,392,  440,392,294,247,
-    220,294,330,440,  392,330,294,220,
-    196,247,294,330,  392,330,294,247,
-    247,294,330,392,  440,392,330,196,
+    392,392,784,784,  587,587,392,392,
+    440,440,659,659,  587,494,440,392,
+    494,587,659,784,  659,587,494,440,
+    392,440,494,587,  659,494,392,392,
   ];
-  const WORDS_BASS = [98,110,98,98]; // G2 A2 G2 G2
+  const WORDS_BASS = [98,147,98,98]; // G2 D3 G2 G2
 
-  // ── NUMBERS — F major pentatonic, 86 BPM ─────────────────────────────────
+  // ── NUMBERS — F major "Counting Jig", 114 BPM ────────────────────────────
+  // Bouncy folk-dance feel — playful leaps and runs
+  // F4=349 G4=392 A4=440 C5=523 D5=587 E5=659
   const NUMBERS_PAT = [
-    175,220,262,349,  392,349,262,220,
-    196,262,294,392,  349,294,262,196,
-    175,220,262,330,  349,330,262,220,
-    220,262,349,392,  440,392,349,262,
+    349,392,440,523,  440,392,349,330,
+    294,330,349,392,  440,392,330,294,
+    349,440,523,659,  523,440,349,392,
+    440,523,587,523,  440,349,392,349,
   ];
-  const NUMBERS_BASS = [87,87,110,87]; // F2 F2 A2 F2
+  const NUMBERS_BASS = [87,131,87,87]; // F2 C3 F2 F2
 
-  // ── MATH — D major, 72 BPM ────────────────────────────────────────────────
+  // ── MATH — D major "Ode to Joy" (Beethoven), 96 BPM ─────────────────────
+  // Two phrases of the famous melody — triumphant and recognisable
+  // D4=294 E4=330 F#4=370 G4=392 A4=440 B4=494 C#5=554 D5=587
   const MATH_PAT = [
-    294,370,440,587,  494,440,370,294,
-    330,440,494,587,  659,587,494,330,
-    247,294,370,440,  494,440,370,247,
-    294,370,440,494,  587,494,440,294,
+    370,370,392,440,  440,392,370,330,
+    294,294,330,370,  370,330,330,330,
+    370,370,392,440,  440,392,370,330,
+    294,294,330,370,  330,294,294,294,
   ];
-  const MATH_BASS = [147,147,123,147]; // D2 D2 B2 D2
+  const MATH_BASS = [147,110,147,110]; // D3 A2 D3 A2
 
   const phaseMap = {
-    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/76/4,  drone: 131 },
-    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/82/4,  drone: 98  },
-    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/86/4,  drone: 87  },
-    MATH:    { pat: MATH_PAT,    bass: MATH_BASS,    S: 60/72/4,  drone: 147 },
+    LETTERS: { pat: LETTERS_PAT, bass: LETTERS_BASS, S: 60/120/4 },
+    WORDS:   { pat: WORDS_PAT,   bass: WORDS_BASS,   S: 60/108/4 },
+    NUMBERS: { pat: NUMBERS_PAT, bass: NUMBERS_BASS, S: 60/114/4 },
+    MATH:    { pat: MATH_PAT,    bass: MATH_BASS,    S: 60/96/4  },
   };
   const cfg = phaseMap[phase] || phaseMap.LETTERS;
-  const { pat, bass, S, drone } = cfg;
+  const { pat, bass, S } = cfg;
   const loopLen = pat.length * S;
 
   function scheduleLoop(startT) {
     if (_musicToken !== token) return;
 
-    // One GainNode per loop — all notes route through it.
-    // A single disconnect() after the loop ends releases all ~155 nodes at once
-    // instead of firing 155 individual onended callbacks at the audio thread.
+    // One GainNode per loop — single disconnect() releases all nodes at once.
     const loopBus = audioCtx.createGain();
     loopBus.connect(musicGain);
 
-    droneNote(drone, startT, loopLen, loopBus);
     pat.forEach((freq, i) => {
-      if (i % 4 === 0) grace(freq, startT + i * S, loopBus);
+      if (i % 8 === 0) grace(freq, startT + i * S, loopBus);
       hNote(freq, startT + i * S, S * 0.88, loopBus);
-      if (i % 4 === 0) sparkle(freq, startT + i * S, loopBus);
+      if (i % 8 === 0) sparkle(freq, startT + i * S, loopBus);
       if (i % 4 === 0) bassNote(bass[Math.floor(i/4) % bass.length], startT + i * S, S * 4, loopBus);
     });
 
     const nextStart = startT + loopLen;
 
-    // Disconnect the bus 0.5 s after the last note in this loop stops.
-    // By then every oscillator has already called .stop(); safe to release.
     setTimeout(() => { try { loopBus.disconnect(); } catch(e) {} },
                Math.max(0, (nextStart + 0.5 - audioCtx.currentTime) * 1000));
-
     setTimeout(() => scheduleLoop(nextStart),
                Math.max(0, (nextStart - audioCtx.currentTime - 0.5) * 1000));
   }
@@ -1780,28 +1766,28 @@ function drawHUD(ctx) {
       const eq = `${prob.a} ${prob.op} ${prob.b} = ?`;
       const blink=Math.floor(frameCount/18)%2===0;
       ctx.fillStyle='#fffde7ee';
-      ctx.beginPath(); ctx.roundRect(W/2-160,H*0.6,320,100,16); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(W/2-160,H*0.76,320,100,16); ctx.fill();
       ctx.strokeStyle='#f72585'; ctx.lineWidth=3;
-      ctx.beginPath(); ctx.roundRect(W/2-160,H*0.6,320,100,16); ctx.stroke();
+      ctx.beginPath(); ctx.roundRect(W/2-160,H*0.76,320,100,16); ctx.stroke();
       ctx.fillStyle='#1a0a00'; ctx.font='bold 48px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(eq, W/2, H*0.6+42);
+      ctx.fillText(eq, W/2, H*0.76+42);
       if(blink){
         ctx.fillStyle='#c8960c'; ctx.font='bold 18px Georgia'; ctx.textBaseline='middle';
-        ctx.fillText(`Press the answer digit! (${enemy.hits}/3 hits)`, W/2, H*0.6+82);
+        ctx.fillText(`Press the answer digit! (${enemy.hits}/3 hits)`, W/2, H*0.76+82);
       }
     } else {
       // Letters or Numbers: key blink prompt
       const displayKey = gamePhase==='LETTERS' ? ALPHABET[currentIndex] : NUMBERS[numberIndex];
       const blink=Math.floor(frameCount/18)%2===0;
       ctx.fillStyle='#fffde7ee';
-      ctx.beginPath(); ctx.roundRect(W/2-130,H*0.6,260,80,16); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(W/2-130,H*0.76,260,80,16); ctx.fill();
       ctx.strokeStyle='#ffd700'; ctx.lineWidth=3;
-      ctx.beginPath(); ctx.roundRect(W/2-130,H*0.6,260,80,16); ctx.stroke();
+      ctx.beginPath(); ctx.roundRect(W/2-130,H*0.76,260,80,16); ctx.stroke();
       ctx.fillStyle='#1a0a00'; ctx.font='bold 22px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(`Press the key: (${enemy.hits}/3 hits)`,W/2,H*0.6+22);
+      ctx.fillText(`Press the key: (${enemy.hits}/3 hits)`,W/2,H*0.76+22);
       if(blink){
         ctx.fillStyle='#c8960c'; ctx.font='bold 52px Georgia'; ctx.textBaseline='middle';
-        ctx.fillText(displayKey,W/2,H*0.6+58);
+        ctx.fillText(displayKey,W/2,H*0.76+58);
       }
     }
   }
