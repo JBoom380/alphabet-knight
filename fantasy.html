@@ -86219,8 +86219,10 @@ window.AK = window.AK || {};
   }
 
   // ── Game state ─────────────────────────────────────────────────────────────
+  // Learn is the default: the child must find the right answer. Easy (any tap strikes) is opt-in from the menu and is remembered.
+  function savedMode() { try { return localStorage.getItem('akMode') === 'easy' ? 'easy' : 'learn'; } catch (e) { return 'learn'; } }
   const G = {
-    mode: 'easy', phase: null, index: 0, total: 0, items: [], creature: null, creatureZ: 0,
+    mode: savedMode(), phase: null, index: 0, total: 0, items: [], creature: null, creatureZ: 0,
     wordPos: 0, busy: false, hint: 0, wrongs: 0, meetTime: 0, choices: null,
     stateTime: 0, fade: 1, fadeTarget: 1, lastCorrect: -99, stepT: 0, bob: 0, speed: 0, muted: false,
     screen: 'title', nextPhaseAt: 0, pendingTimers: [], armed: {}, lastWrongSay: -99,
@@ -86466,7 +86468,7 @@ window.AK = window.AK || {};
     audio.sfx('click');
     if (a.type === 'start') { goMenu(); return true; }
     if (a.type === 'phase') { startPhase(a.phase); return true; }
-    if (a.type === 'mode') { G.mode = a.mode; audio.speak(a.mode === 'easy' ? 'Easy! Tap anything!' : 'Learn! Find the letter!'); return true; }
+    if (a.type === 'mode') { G.mode = a.mode; try { localStorage.setItem('akMode', a.mode); } catch (e) {} audio.speak(a.mode === 'easy' ? 'Easy! Tap anything!' : 'Learn! Find the letter!'); return true; }
     if ((a.type === 'home' && core.state !== 'VICTORY') || a.type === 'mute') {
       if (!(core.time - (G.armed[a.type] || -99) < 2)) { G.armed[a.type] = core.time; return true; } // first tap only arms it
       G.armed[a.type] = -99;
