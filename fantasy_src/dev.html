@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Alphabet Knight: The Castle Quest</title>
+<style>
+  html, body { margin:0; height:100%; background:#0b0616; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  #stage { position:absolute; cursor:pointer; }
+  #stage canvas { position:absolute; left:0; top:0; width:100%; height:100%; }
+  #gl, #px { image-rendering: pixelated; image-rendering: crisp-edges; }
+  #rotate { display:none; position:absolute; left:0; right:0; bottom:6%; text-align:center; color:#ffd86a; font:bold 28px Georgia,serif; text-shadow:0 2px 6px #000; pointer-events:none; }
+  #rotate span { display:inline-block; font-size:72px; animation:tilt 2.4s ease-in-out infinite; }
+  @keyframes tilt { 0%,30% { transform:rotate(0deg); } 60%,100% { transform:rotate(-90deg); } }
+  @media (orientation: portrait) and (max-width: 900px) { #rotate { display:block; } }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="gl"></canvas><canvas id="px"></canvas><canvas id="ui"></canvas></div>
+<div id="rotate"><span>📱</span><br>Turn me sideways!</div>
+<!--SCRIPTS-->
+<script src="vendor/three.global.js"></script>
+<script src="config.js"></script>
+<script src="audio.js"></script>
+<script src="world_ground.js"></script>
+<script src="world_sky.js"></script>
+<script src="creatures.js"></script>
+<script src="hands.js"></script>
+<script src="ui.js"></script>
+<script src="game.js"></script>
+<!--/SCRIPTS-->
+</body>
+</html>
